@@ -16,8 +16,11 @@ var fallbackModelIDs = []string{
 	"claude-haiku-4-5",
 	"claude-opus-4-8",
 	"claude-opus-5",
+	"claude-opus-5-5",
 	"claude-sonnet-5",
 	"gpt-6-astra",
+	"gpt-6-luna",
+	"gpt-6-sol",
 	"gpt-5.6-luna",
 	"gpt-5.6-sol",
 	"gpt-5.6-terra",
@@ -81,33 +84,49 @@ var modelDefinitions = map[string]modelDefinition{
 		methods:     []string{"messages", "countTokens"}, parameters: []string{"max_tokens", "stop_sequences", "tools", "tool_choice", "thinking", "output_config"},
 		thinking: adaptiveRelayThinking(), modelType: "claude", owner: "anthropic",
 	},
+	"claude-opus-5-5": {
+		displayName: "Claude Opus 5.5", context: 1000000, output: 128000,
+		description: "Anthropic premium agentic and reasoning model via Mirasim",
+		methods:     []string{"messages", "countTokens"}, parameters: []string{"max_tokens", "stop_sequences", "tools", "tool_choice", "thinking", "output_config"},
+		thinking: adaptiveRelayThinking(), modelType: "claude", owner: "anthropic",
+	},
 	"claude-sonnet-5": {
 		displayName: "Claude Sonnet 5", created: 1782777600, context: 1000000, output: 128000,
 		description: "Anthropic agentic Sonnet model for coding and tool use via Mirasim",
 		methods:     []string{"messages", "countTokens"}, parameters: []string{"max_tokens", "stop_sequences", "tools", "tool_choice", "thinking", "output_config"},
 		thinking: adaptiveRelayThinking(), modelType: "claude", owner: "anthropic",
 	},
-	// Context windows come from the catalog the official client falls back to
-	// when the relay publishes none, confirmed in the 0.0.354 build: Astra at
-	// 0xd4e40 and the GPT 5.6 models at 0x5ad20. Its model-picker list disagrees;
-	// the fallback catalog is the one that stands in for the relay's own table.
+	// Context windows come from the official 0.0.372 builtin agent catalog,
+	// the table used when the relay publishes none. Astra is 0x100590. GPT 6
+	// Sol, GPT 6 Luna and the GPT 5.6 models are 0xd4e40. The desktop
+	// model-picker list still shows the older 0.0.354 windows.
 	"gpt-6-astra": {
-		displayName: "GPT 6 Astra", version: "gpt-6", context: 872000, output: 128000,
+		displayName: "GPT 6 Astra", version: "gpt-6", context: 1050000, output: 128000,
 		description: "OpenAI GPT 6 Astra via Mirasim",
 		methods:     []string{"responses"}, parameters: []string{"tools", "thinking"}, thinking: codexThinking(), modelType: "openai", owner: "openai",
 	},
+	"gpt-6-luna": {
+		displayName: "GPT 6 Luna", version: "gpt-6", context: 872000, output: 128000,
+		description: "OpenAI GPT 6 Luna via Mirasim",
+		methods:     []string{"responses"}, parameters: []string{"tools", "thinking"}, thinking: codexThinking(), modelType: "openai", owner: "openai",
+	},
+	"gpt-6-sol": {
+		displayName: "GPT 6 Sol", version: "gpt-6", context: 872000, output: 128000,
+		description: "OpenAI GPT 6 Sol via Mirasim",
+		methods:     []string{"responses"}, parameters: []string{"tools", "thinking"}, thinking: codexThinking(), modelType: "openai", owner: "openai",
+	},
 	"gpt-5.6-luna": {
-		displayName: "GPT 5.6 Luna", version: "gpt-5.6", created: 1783616400, context: 372000, output: 128000,
+		displayName: "GPT 5.6 Luna", version: "gpt-5.6", created: 1783616400, context: 872000, output: 128000,
 		description: "Fast and affordable OpenAI agentic coding model via Mirasim",
 		methods:     []string{"responses"}, parameters: []string{"tools", "thinking"}, thinking: codexThinking(), modelType: "openai", owner: "openai",
 	},
 	"gpt-5.6-sol": {
-		displayName: "GPT 5.6 Sol", version: "gpt-5.6", created: 1783616400, context: 372000, output: 128000,
+		displayName: "GPT 5.6 Sol", version: "gpt-5.6", created: 1783616400, context: 872000, output: 128000,
 		description: "OpenAI frontier agentic coding model via Mirasim",
 		methods:     []string{"responses"}, parameters: []string{"tools", "thinking"}, thinking: codexThinking(), modelType: "openai", owner: "openai",
 	},
 	"gpt-5.6-terra": {
-		displayName: "GPT 5.6 Terra", version: "gpt-5.6", created: 1783616400, context: 372000, output: 128000,
+		displayName: "GPT 5.6 Terra", version: "gpt-5.6", created: 1783616400, context: 872000, output: 128000,
 		description: "Balanced OpenAI agentic coding model via Mirasim",
 		methods:     []string{"responses"}, parameters: []string{"tools", "thinking"}, thinking: codexThinking(), modelType: "openai", owner: "openai",
 	},

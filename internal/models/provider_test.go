@@ -58,7 +58,7 @@ func TestCatalogFailureUsesOfficialFallbackForExistingCredential(t *testing.T) {
 	for _, model := range response.Models {
 		byID[model.ID] = model
 	}
-	for _, id := range []string{"claude-sonnet-5", "gpt-6-astra", "deepseek-flash", "glm-5.3-flash", "kimi-k3", "gpt-image-2"} {
+	for _, id := range []string{"claude-opus-5-5", "claude-sonnet-5", "gpt-6-astra", "gpt-6-luna", "gpt-6-sol", "deepseek-flash", "glm-5.3-flash", "kimi-k3", "gpt-image-2"} {
 		if _, ok := byID[id]; !ok {
 			t.Fatalf("fallback missing %s", id)
 		}
@@ -118,7 +118,7 @@ func TestStaticModelsPublishNothingForAnOAuthOnlyExecutor(t *testing.T) {
 
 func TestFallbackCatalogCoversOfficialBuiltinFamilies(t *testing.T) {
 	models := withLongContextAliases(fallbackModels())
-	if len(models) != len(fallbackModelIDs)+5 {
+	if len(models) != len(fallbackModelIDs)+6 {
 		t.Fatalf("models = %#v", models)
 	}
 	claudeCount := 0
@@ -146,7 +146,7 @@ func TestFallbackCatalogCoversOfficialBuiltinFamilies(t *testing.T) {
 			t.Fatalf("unexpected model family: %#v", model)
 		}
 	}
-	if claudeCount != 11 || gptCount != 4 {
+	if claudeCount != 13 || gptCount != 6 {
 		t.Fatalf("fallback family counts: Claude=%d GPT=%d", claudeCount, gptCount)
 	}
 	byID := make(map[string]pluginapi.ModelInfo, len(models))
@@ -154,7 +154,7 @@ func TestFallbackCatalogCoversOfficialBuiltinFamilies(t *testing.T) {
 		byID[model.ID] = model
 	}
 	astra := byID["gpt-6-astra"]
-	if astra.ContextLength != 872000 || astra.MaxCompletionTokens != 128000 || astra.Thinking == nil {
+	if astra.ContextLength != 1050000 || astra.MaxCompletionTokens != 128000 || astra.Thinking == nil {
 		t.Fatalf("Astra metadata=%+v", astra)
 	}
 	sonnet := byID["claude-sonnet-5"]
@@ -250,7 +250,7 @@ func TestExposedModelsPreferTheServedContextWindow(t *testing.T) {
 	if aliases := withLongContextAliases(models); len(aliases) != 3 {
 		t.Fatalf("a 400k model was still offered a [1m] selector: %#v", aliases)
 	}
-	if models[2].ContextLength != 372000 {
+	if models[2].ContextLength != 872000 {
 		t.Fatalf("missing context window erased static metadata: %#v", models[2])
 	}
 }
@@ -275,7 +275,7 @@ func TestModelInfoPreservesLiveIdentityAndAddsKnownCapabilities(t *testing.T) {
 	if model.Object != "custom-model" || model.Created != 42 || model.OwnedBy != "relay-owner" {
 		t.Fatalf("live identity fields were replaced: %#v", model)
 	}
-	if model.Type != "openai" || model.DisplayName != "GPT 5.6 Sol" || model.ContextLength != 372000 || model.MaxCompletionTokens != 128000 || model.Thinking == nil {
+	if model.Type != "openai" || model.DisplayName != "GPT 5.6 Sol" || model.ContextLength != 872000 || model.MaxCompletionTokens != 128000 || model.Thinking == nil {
 		t.Fatalf("known GPT metadata was not enriched: %#v", model)
 	}
 	wantLevels := []string{"low", "medium", "high", "xhigh", "max", "ultra"}
