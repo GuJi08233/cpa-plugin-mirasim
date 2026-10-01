@@ -145,9 +145,33 @@ func patchCodexTerminalOutput(terminal json.RawMessage, indexed map[int]json.Raw
 	return encodedEvent, nil
 }
 
+// codexStreamEvent recognizes terminal SSE events before protocol translation.
+func codexStreamEvent(line []byte) (bool, error) {
+	raw := bytes.TrimSpace(line)
+	if bytes.HasPrefix(raw, []byte("data:")) {
+		raw = bytes.TrimSpace(raw[len("data:"):])
+	}
+	var event struct {
+		Type string `json:"type"`
+	}
+	if errDecode := json.Unmarshal(raw, &event); errDecode != nil {
+		return false, nil
+	}
+	switch event.Type {
+	case "response.completed", "response.incomplete":
+		return true, nil
+	case "error", "response.failed":
+		return true, codexEventError(raw)
+	default:
+		return false, nil
+	}
+}
+
 func codexEventError(raw []byte) error {
 	var event struct {
-		Error struct {
+		Message string `json:"message"`
+		Code    string `json:"code"`
+		Error   struct {
 			Message string `json:"message"`
 			Code    string `json:"code"`
 		} `json:"error"`
@@ -163,7 +187,15 @@ func codexEventError(raw []byte) error {
 	code := strings.TrimSpace(event.Error.Code)
 	if message == "" {
 		message = strings.TrimSpace(event.Response.Error.Message)
+	}
+	if message == "" {
+		message = strings.TrimSpace(event.Message)
+	}
+	if code == "" {
 		code = strings.TrimSpace(event.Response.Error.Code)
+	}
+	if code == "" {
+		code = strings.TrimSpace(event.Code)
 	}
 	if message == "" {
 		message = "upstream stream failed"

@@ -364,10 +364,21 @@ func translateStream(ctx context.Context, from, to sdktranslator.Format, model s
 		}
 		var pending []byte
 		var state any
+		var terminal, streamFailed bool
 		translateLine := func(line []byte) bool {
 			line = bytes.TrimSuffix(line, []byte("\r"))
-			if len(bytes.TrimSpace(line)) == 0 {
+			if streamFailed || len(bytes.TrimSpace(line)) == 0 {
 				return true
+			}
+			if from == sdktranslator.FormatCodex {
+				ended, errEvent := codexStreamEvent(line)
+				terminal = terminal || ended
+				// Responses clients understand these events directly. Other protocol
+				// translators may discard them, so report the failure through CPA.
+				if errEvent != nil && to != sdktranslator.FormatOpenAIResponse {
+					streamFailed = true
+					return sendChunk(ctx, output, pluginapi.ExecutorStreamChunk{Err: errEvent})
+				}
 			}
 			frames := registry.TranslateStream(ctx, from, to, model, originalRequest, translatedRequest, append([]byte(nil), line...), &state)
 			for _, frame := range frames {
@@ -386,12 +397,21 @@ func translateStream(ctx context.Context, from, to sdktranslator.Format, model s
 				return
 			case chunk, ok := <-input:
 				if !ok {
-					if len(pending) > 0 {
-						_ = translateLine(pending)
+					if len(pending) > 0 && !translateLine(pending) {
+						return
+					}
+					if from == sdktranslator.FormatCodex && !terminal && !streamFailed {
+						sendChunk(ctx, output, pluginapi.ExecutorStreamChunk{Err: fmt.Errorf("Mirasim Codex stream ended before response.completed")})
 					}
 					return
 				}
+				// Keep draining after a terminal failure so the upstream reader can
+				// release its stream without emitting a second error or a success.
+				if streamFailed {
+					continue
+				}
 				if chunk.Err != nil {
+					streamFailed = true
 					if !sendChunk(ctx, output, pluginapi.ExecutorStreamChunk{Err: chunk.Err}) {
 						return
 					}

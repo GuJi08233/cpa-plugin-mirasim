@@ -50,3 +50,16 @@ func TestCodexNonStreamPayloadReturnsStreamError(t *testing.T) {
 		t.Fatalf("error = %v", errPayload)
 	}
 }
+
+func TestCodexEventErrorKeepsCodeWithoutMessage(t *testing.T) {
+	for _, raw := range []string{
+		`{"type":"error","error":{"code":"server_error"}}`,
+		`{"type":"response.failed","response":{"error":{"code":"server_error"}}}`,
+		`{"type":"error","code":"server_error"}`,
+	} {
+		errEvent := codexEventError([]byte(raw))
+		if !strings.Contains(errEvent.Error(), "server_error") || !strings.Contains(errEvent.Error(), "upstream stream failed") {
+			t.Fatalf("error code lost: %v", errEvent)
+		}
+	}
+}
