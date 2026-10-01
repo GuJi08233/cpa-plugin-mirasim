@@ -103,6 +103,48 @@ func TestCatalogFailureKeepsLastSuccessfulAccountModels(t *testing.T) {
 	}
 }
 
+func TestModelsForAuthLoadsThinkingForNewClaudeModels(t *testing.T) {
+	storage := providerTestStorage(t)
+	host := providerHostClient{do: func(_ context.Context, req pluginapi.HTTPRequest) (pluginapi.HTTPResponse, error) {
+		parsed, _ := url.Parse(req.URL)
+		switch parsed.Path {
+		case "/v1/device/session":
+			return pluginapi.HTTPResponse{StatusCode: http.StatusOK, Body: []byte(`{"ticket":"ticket","expiresIn":900}`)}, nil
+		case "/v1/models":
+			return pluginapi.HTTPResponse{StatusCode: http.StatusOK, Body: []byte(`{"data":[{"id":"claude-future-adaptive","max_input_tokens":1000000},{"id":"claude-future-budget","max_input_tokens":200000}]}`)}, nil
+		case "/v1/model-roster":
+			return pluginapi.HTTPResponse{StatusCode: http.StatusOK, Body: []byte(`{"version":"live","models":{"claude-future-adaptive":{"contextWindow":900000,"maxOutput":128000,"adaptive":true,"effort":["low","high","max"]},"claude-future-budget":{"contextWindow":200000,"maxOutput":64000,"adaptive":false,"effort":["low","high"]},"claude-not-in-account":{"contextWindow":1000000,"adaptive":true}}}`)}, nil
+		default:
+			return pluginapi.HTTPResponse{}, fmt.Errorf("unexpected path %s", parsed.Path)
+		}
+	}}
+	settings := pluginconfig.Defaults()
+	settings.ClientVersion = "test-client"
+	response, errModels := New(settings, mirasim.NewPool()).ModelsForAuth(context.Background(), pluginapi.AuthModelRequest{StorageJSON: storage.JSON(), HTTPClient: host})
+	if errModels != nil {
+		t.Fatal(errModels)
+	}
+	byID := make(map[string]pluginapi.ModelInfo, len(response.Models))
+	for _, model := range response.Models {
+		byID[model.ID] = model
+	}
+	adaptive := byID["claude-future-adaptive"]
+	if adaptive.Thinking == nil || adaptive.Thinking.Max != 0 || len(adaptive.Thinking.Levels) != 3 || adaptive.ContextLength != 1000000 || adaptive.MaxCompletionTokens != 128000 {
+		t.Fatalf("new adaptive Claude = %+v", adaptive)
+	}
+	budget := byID["claude-future-budget"]
+	if budget.Thinking == nil || budget.Thinking.Min != 1024 || budget.Thinking.Max != 128000 || len(budget.Thinking.Levels) != 2 {
+		t.Fatalf("new budget Claude = %+v", budget)
+	}
+	alias := byID["claude-future-adaptive[1m]"]
+	if alias.Thinking == nil || len(alias.Thinking.Levels) != 3 || alias.ContextLength != 1000000 {
+		t.Fatalf("new long-context alias lost thinking: %+v", alias)
+	}
+	if _, present := byID["claude-not-in-account"]; present {
+		t.Fatal("roster exposed a model absent from the account catalog")
+	}
+}
+
 // An OAuth-only executor has no static models to register, and CPA skips the
 // static path for that scope regardless of what is returned here.
 func TestStaticModelsPublishNothingForAnOAuthOnlyExecutor(t *testing.T) {

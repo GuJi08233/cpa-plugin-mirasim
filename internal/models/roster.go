@@ -1,9 +1,10 @@
 package models
 
 import (
+	"strings"
+
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
 	"github.com/router-for-me/CLIProxyAPIPlugins/mirasim/internal/mirasim"
-	"strings"
 )
 
 // Overlay specifications only on models the account's live catalog exposes.
@@ -36,13 +37,15 @@ func applyRoster(models []pluginapi.ModelInfo, roster mirasim.ModelRoster) {
 				seen[level] = true
 			}
 		}
-		_, known := modelDefinitions[strings.ToLower(m.ID)]
 		// The roster's adaptive flag is the only thing that selects the upstream
 		// thinking form, so publish the bounds that form actually accepts: an
 		// effort string carries no token budget, and a budget model cannot take
 		// an effort string. Advertising both invites a request the relay rejects.
-		if m.Type == "claude" && known && (spec.AdaptiveSet || hasAgentSpec(roster, m.ID)) {
-			if spec.Adaptive {
+		adaptive, shapeKnown := roster.ThinkingAdaptive(m.ID)
+		if m.Type == "claude" && (shapeKnown || len(levels) > 0) {
+			// A catalog-only model uses the same roster shape as the executor.
+			// An effort-only specification keeps the relay's adaptive default.
+			if adaptive || !shapeKnown {
 				if m.Thinking == nil {
 					m.Thinking = adaptiveRelayThinking()
 				}
@@ -57,7 +60,7 @@ func applyRoster(models []pluginapi.ModelInfo, roster mirasim.ModelRoster) {
 				m.SupportedParameters = appendUnique(m.SupportedParameters, "thinking")
 			}
 		}
-		if len(levels) > 0 && (m.Type != "claude" || known) {
+		if len(levels) > 0 {
 			if m.Thinking == nil {
 				m.Thinking = &pluginapi.ThinkingSupport{}
 			}
@@ -81,17 +84,6 @@ func rosterEffortSupported(modelType, level string) bool {
 			return false
 		}
 	}
-}
-
-func hasAgentSpec(roster mirasim.ModelRoster, id string) bool {
-	for _, entries := range roster.Agents {
-		for _, spec := range entries {
-			if strings.EqualFold(spec.ID, id) {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func appendUnique(values []string, extra ...string) []string {
