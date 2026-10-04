@@ -77,6 +77,46 @@ func TestParseModelUsesCPASuffixConvention(t *testing.T) {
 	}
 }
 
+// The relay serves "kimi-code/k3", and earlier plugin releases republished it
+// as "kimi-k3". Both selectors must resolve to the id the relay serves, or a
+// caller holding the alias would ask for a model that does not exist.
+func TestKimiSelectorAliasResolvesToTheRelayModelID(t *testing.T) {
+	for _, selector := range []string{"kimi-k3", "mirasim/kimi-k3", "KIMI-K3"} {
+		if got := ParseModel(selector).ModelName; got != "kimi-code/k3" {
+			t.Fatalf("ParseModel(%q).ModelName = %q", selector, got)
+		}
+	}
+	// A thinking suffix must not survive the alias either.
+	parsed := ParseModel("kimi-k3(high)")
+	if parsed.ModelName != "kimi-code/k3" || parsed.Config.Level != "high" {
+		t.Fatalf("parsed = %#v", parsed)
+	}
+	// The relay's own id is left alone.
+	if got := UpstreamModelID("kimi-code/k3"); got != "kimi-code/k3" {
+		t.Fatalf("UpstreamModelID() = %q", got)
+	}
+	if got := UpstreamModelID("  claude-sonnet-5  "); got != "claude-sonnet-5" {
+		t.Fatalf("UpstreamModelID() = %q", got)
+	}
+}
+
+func TestSelectorAliasesForNamesThePublishedSelectors(t *testing.T) {
+	aliases := SelectorAliasesFor("kimi-code/k3")
+	if len(aliases) != 1 || aliases[0] != "kimi-k3" {
+		t.Fatalf("aliases = %#v", aliases)
+	}
+	// An alias must not report itself, or publication would loop.
+	if got := SelectorAliasesFor("kimi-k3"); len(got) != 0 {
+		t.Fatalf("SelectorAliasesFor(alias) = %#v", got)
+	}
+	if got := SelectorAliasesFor("claude-sonnet-5"); len(got) != 0 {
+		t.Fatalf("SelectorAliasesFor(unaliased) = %#v", got)
+	}
+	if got := SelectorAliasesFor(""); len(got) != 0 {
+		t.Fatalf("SelectorAliasesFor(\"\") = %#v", got)
+	}
+}
+
 func TestDeepSeekOffKeepsItsOwnEffort(t *testing.T) {
 	parsed := ParseModel("deepseek-flash(off)")
 	if parsed.ModelName != "deepseek-flash" || parsed.Config.Mode != "level" || parsed.Config.Level != "off" {

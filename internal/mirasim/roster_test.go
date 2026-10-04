@@ -35,8 +35,11 @@ func TestParseRosterMergesTopLevelModelsAndNewAgents(t *testing.T) {
 	if !ok || deepseek.MaxOutput != 384000 || len(deepseek.Effort) != 2 || deepseek.Effort[0] != "off" {
 		t.Fatalf("merged DeepSeek = %#v", deepseek)
 	}
-	if _, ok := roster.Spec("kimi-k3"); !ok {
-		t.Fatal("official Kimi agent alias was ignored")
+	// The relay's own id has to survive parsing unchanged: roster metadata is
+	// looked up by the id the account catalog publishes.
+	kimi, ok := roster.Spec("kimi-code/k3")
+	if !ok || kimi.ContextWindow != 1048576 {
+		t.Fatalf("official Kimi agent entry was ignored: %#v", kimi)
 	}
 	glm, ok := roster.Spec("glm-5.3-flash")
 	if !ok || glm.ContextWindow != 900000 || glm.Label != "GLM Flash" {

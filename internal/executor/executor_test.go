@@ -157,6 +157,33 @@ func TestBuildProviderRequestRoutesByModelAndClientProtocol(t *testing.T) {
 	}
 }
 
+// The relay serves "kimi-code/k3". Both the id its catalog publishes and the
+// "kimi-k3" selector earlier plugin releases shipped have to reach it, because
+// asking upstream for the alias would name a model the relay does not serve.
+func TestKimiSelectorsReachTheRelayModelID(t *testing.T) {
+	for _, model := range []string{"kimi-code/k3", "kimi-k3", "mirasim/kimi-k3"} {
+		body, route, errBuild := buildProviderRequest(pluginapi.ExecutorRequest{
+			Model:        model,
+			SourceFormat: sdktranslator.FormatOpenAI.String(),
+			Format:       sdktranslator.FormatOpenAI.String(),
+			Payload:      []byte(`{"model":"` + model + `","messages":[{"role":"user","content":"hello"}]}`),
+		}, false, thinkingpkg.ShapeUnknown)
+		if errBuild != nil {
+			t.Fatalf("buildProviderRequest(%q) error = %v", model, errBuild)
+		}
+		if route.Path != "/v1/messages" {
+			t.Fatalf("route for %q = %#v", model, route)
+		}
+		var decoded map[string]any
+		if errDecode := json.Unmarshal(body, &decoded); errDecode != nil {
+			t.Fatalf("request body for %q is invalid JSON: %v\n%s", model, errDecode, body)
+		}
+		if decoded["model"] != "kimi-code/k3" {
+			t.Fatalf("model on the wire for %q = %#v", model, decoded["model"])
+		}
+	}
+}
+
 func TestClaudeNormalizationPreservesOutputConfig(t *testing.T) {
 	body, route, errBuild := buildProviderRequest(pluginapi.ExecutorRequest{
 		Model:        "claude-sonnet-5",

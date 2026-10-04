@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -125,7 +126,47 @@ func parseContextSelector(parsed ParsedModel) ParsedModel {
 		parsed.ModelName = strings.TrimSpace(parsed.ModelName[:len(parsed.ModelName)-4])
 		parsed.LongContext = true
 	}
+	parsed.ModelName = UpstreamModelID(parsed.ModelName)
 	return parsed
+}
+
+// selectorAliases maps a selector this plugin has published onto the model id
+// the relay's own catalog serves.
+//
+// Kimi is the only entry. The relay serves "kimi-code/k3" and earlier plugin
+// releases republished it as "kimi-k3". Both selectors have to keep resolving
+// while exactly one id reaches the relay: asking upstream for the alias would
+// name a model the relay does not serve.
+var selectorAliases = map[string]string{
+	"kimi-k3": "kimi-code/k3",
+}
+
+// UpstreamModelID resolves a published selector to the id the relay serves. A
+// selector without an alias is returned trimmed and unchanged.
+func UpstreamModelID(model string) string {
+	trimmed := strings.TrimSpace(model)
+	if upstream, ok := selectorAliases[strings.ToLower(trimmed)]; ok {
+		return upstream
+	}
+	return trimmed
+}
+
+// SelectorAliasesFor lists the extra selectors that resolve to the same relay
+// model as upstreamID, so a caller can publish them beside the real id. The
+// result is sorted and never contains upstreamID itself.
+func SelectorAliasesFor(upstreamID string) []string {
+	target := strings.ToLower(strings.TrimSpace(upstreamID))
+	if target == "" {
+		return nil
+	}
+	aliases := make([]string, 0, len(selectorAliases))
+	for alias, upstream := range selectorAliases {
+		if upstream == target {
+			aliases = append(aliases, alias)
+		}
+	}
+	sort.Strings(aliases)
+	return aliases
 }
 
 // ApplyForWire applies a canonical thinking configuration after request

@@ -47,6 +47,16 @@ func providerTestStorage(t *testing.T) credentials.Storage {
 	}
 }
 
+// modelIDs keeps failure output readable: a full ModelInfo dump for the whole
+// catalog buries the one line that matters.
+func modelIDs(models []pluginapi.ModelInfo) []string {
+	ids := make([]string, 0, len(models))
+	for _, model := range models {
+		ids = append(ids, model.ID)
+	}
+	return ids
+}
+
 func TestCatalogFailureUsesOfficialFallbackForExistingCredential(t *testing.T) {
 	storage := providerTestStorage(t)
 	provider := New(pluginconfig.Defaults(), mirasim.NewPool())
@@ -159,13 +169,21 @@ func TestStaticModelsPublishNothingForAnOAuthOnlyExecutor(t *testing.T) {
 }
 
 func TestFallbackCatalogCoversOfficialBuiltinFamilies(t *testing.T) {
-	models := withLongContextAliases(fallbackModels())
-	if len(models) != len(fallbackModelIDs)+6 {
-		t.Fatalf("models = %#v", models)
+	models := publishModels(fallbackModels())
+	// Every fallback id, plus six [1m] selectors for the million-token Claude
+	// models, five gpt-image routes, and the "kimi-k3" selector earlier
+	// releases published for "kimi-code/k3".
+	if len(models) != len(fallbackModelIDs)+6+5+1 {
+		t.Fatalf("model count = %d, want %d: %v", len(models), len(fallbackModelIDs)+6+5+1, modelIDs(models))
 	}
 	claudeCount := 0
 	gptCount := 0
 	for _, model := range models {
+		// The gpt-image entries exist to route CPA's image handlers. They
+		// publish no context window by design, so they are not chat models.
+		if model.Type == "openai-image" {
+			continue
+		}
 		if !isExposedModel(model.ID) || len(model.SupportedGenerationMethods) == 0 || model.ContextLength == 0 {
 			t.Fatalf("incomplete model metadata: %#v", model)
 		}
@@ -223,8 +241,18 @@ func TestFallbackCatalogCoversOfficialBuiltinFamilies(t *testing.T) {
 	if glm := byID["glm-5.3-flash"]; glm.Type != "glm" || glm.ContextLength != 1000000 || glm.MaxCompletionTokens != 0 {
 		t.Fatalf("GLM metadata = %#v", glm)
 	}
-	if kimi := byID["kimi-k3"]; kimi.Type != "kimi" || kimi.ContextLength != 1048576 || kimi.MaxCompletionTokens != 0 {
+	// The relay serves "kimi-code/k3". The plugin also keeps publishing the
+	// "kimi-k3" selector older releases shipped, and both entries have to
+	// carry the same metadata so a caller holding either one is unaffected.
+	kimi := byID["kimi-code/k3"]
+	if kimi.Type != "kimi" || kimi.ContextLength != 1048576 || kimi.MaxCompletionTokens != 0 {
 		t.Fatalf("Kimi metadata = %#v", kimi)
+	}
+	alias := byID["kimi-k3"]
+	if alias.Type != kimi.Type || alias.ContextLength != kimi.ContextLength ||
+		alias.MaxCompletionTokens != kimi.MaxCompletionTokens || alias.DisplayName != kimi.DisplayName ||
+		len(alias.Thinking.Levels) != len(kimi.Thinking.Levels) {
+		t.Fatalf("Kimi alias metadata = %#v, want it to match %#v", alias, kimi)
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	pluginconfig "github.com/router-for-me/CLIProxyAPIPlugins/mirasim/internal/config"
 	"github.com/router-for-me/CLIProxyAPIPlugins/mirasim/internal/credentials"
 	"github.com/router-for-me/CLIProxyAPIPlugins/mirasim/internal/mirasim"
+	thinkingpkg "github.com/router-for-me/CLIProxyAPIPlugins/mirasim/internal/thinking"
 )
 
 var fallbackModelIDs = []string{
@@ -26,7 +27,7 @@ var fallbackModelIDs = []string{
 	"gpt-5.6-terra",
 	"deepseek-flash",
 	"glm-5.3-flash",
-	"kimi-k3",
+	"kimi-code/k3",
 }
 
 var imageModelIDs = []string{
@@ -142,7 +143,7 @@ var modelDefinitions = map[string]modelDefinition{
 		methods:     []string{"messages", "countTokens"}, parameters: []string{"max_tokens", "stop_sequences", "tools", "tool_choice", "thinking", "output_config"},
 		thinking: &pluginapi.ThinkingSupport{DynamicAllowed: true, Levels: []string{"low", "high", "max"}}, modelType: "glm", owner: "z-ai",
 	},
-	"kimi-k3": {
+	"kimi-code/k3": {
 		displayName: "Kimi K3", context: 1048576,
 		description: "Kimi K3 via Mirasim",
 		methods:     []string{"messages", "countTokens"}, parameters: []string{"max_tokens", "stop_sequences", "tools", "tool_choice", "thinking", "output_config"},
@@ -175,7 +176,7 @@ func (p *Provider) ModelsForAuth(ctx context.Context, req pluginapi.AuthModelReq
 		return pluginapi.ModelResponse{}, errParse
 	}
 	if storage == nil {
-		return pluginapi.ModelResponse{Provider: credentials.Provider, Models: withLongContextAliases(withImageAliases(fallbackModels()))}, nil
+		return pluginapi.ModelResponse{Provider: credentials.Provider, Models: publishModels(fallbackModels())}, nil
 	}
 	client := p.pool.Client(*storage)
 	catalog, errCatalog := client.ListModels(ctx, req.HTTPClient)
@@ -194,9 +195,14 @@ func (p *Provider) ModelsForAuth(ctx context.Context, req pluginapi.AuthModelReq
 	}
 	applyRoster(models, roster)
 	applyCatalogContexts(models, catalog.Models)
-	models = withImageAliases(models)
-	models = withLongContextAliases(models)
-	return pluginapi.ModelResponse{Provider: credentials.Provider, Models: models}, nil
+	return pluginapi.ModelResponse{Provider: credentials.Provider, Models: publishModels(models)}, nil
+}
+
+// publishModels adds the selectors a caller may already hold on top of the
+// models the account actually exposes. Aliases are derived last so they carry
+// the roster and catalog metadata of the model they name.
+func publishModels(models []pluginapi.ModelInfo) []pluginapi.ModelInfo {
+	return withLongContextAliases(withImageAliases(withRelayAliases(models)))
 }
 
 func fallbackModels() []pluginapi.ModelInfo {
@@ -280,7 +286,9 @@ func isExposedModel(id string) bool {
 
 func modelInfo(id, object string, created int64, owner string) pluginapi.ModelInfo {
 	id = strings.TrimSpace(id)
-	definition, known := modelDefinitions[strings.ToLower(id)]
+	// A published alias names the same relay model as the id the catalog
+	// serves, so it has to resolve to the same definition.
+	definition, known := modelDefinitions[strings.ToLower(thinkingpkg.UpstreamModelID(id))]
 	if !known {
 		definition = genericDefinition(id)
 	}

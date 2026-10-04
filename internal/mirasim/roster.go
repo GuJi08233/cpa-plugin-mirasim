@@ -57,9 +57,6 @@ func parseRoster(raw []byte) (ModelRoster, error) {
 				continue
 			}
 			spec.ID = strings.ToLower(strings.TrimSpace(spec.ID))
-			if family == "kimi" && spec.ID == "kimi-code/k3" {
-				spec.ID = "kimi-k3"
-			}
 			prefix := map[string]string{"claude": "claude-", "codex": "gpt-", "dsh": "deepseek-", "zcode": "glm-", "kimi": "kimi-"}[family]
 			if !strings.HasPrefix(spec.ID, prefix) || seen[spec.ID] || spec.ContextWindow <= 0 {
 				continue
