@@ -46,7 +46,7 @@ plugins:
 | `locale` | 空 | 可选，如 `zh-CN`。 |
 | `relay-url` | `https://relay.mirasim.ai` | 一般不用改。 |
 | `admin-url` | `https://auth.mirasim.ai` | 一般不用改。 |
-| `client-version` | `0.0.372` | 上报的客户端版本。旧凭证在下次保存或刷新时改成这项的值。 |
+| `client-version` | `0.0.403` | 上报的客户端版本。旧凭证在下次保存或刷新时改成这项的值。 |
 
 环境变量依次为 `MIRASIM_OAUTH_LOGIN_PROVIDER`、`MIRASIM_OAUTH_CALLBACK_PORT`、`MIRASIM_COLLECT`、`MIRASIM_LOCALE`、`MIRASIM_RELAY_URL`、`MIRASIM_ADMIN_URL`、`MIRASIM_CLIENT_VERSION`。
 
