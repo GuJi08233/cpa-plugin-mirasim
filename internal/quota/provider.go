@@ -35,8 +35,11 @@ func (p *Provider) DescribeQuota(context.Context, pluginapi.QuotaDescribeRequest
 	return pluginapi.QuotaDescribeResponse{
 		SupportedProviders: []string{credentials.Provider},
 		DisplayName:        "Mirasim",
-		// Mirasim publishes limits and offers no route that clears them.
-		SupportsReset: false,
+		// Mirasim grants reset cards that clear an exhausted window through
+		// POST /v1/reset-cards/{id}/redeem. The reset route carries no
+		// parameters, so the provider spends the card that expires soonest on
+		// the caller's behalf and reports which card it used.
+		SupportsReset: true,
 	}, nil
 }
 
@@ -60,11 +63,79 @@ func (p *Provider) FetchQuota(ctx context.Context, req pluginapi.QuotaFetchReque
 	return Normalize(*storage, snapshot), nil
 }
 
-func (p *Provider) ResetQuota(context.Context, pluginapi.QuotaResetRequest) (pluginapi.QuotaResetResponse, error) {
-	return pluginapi.QuotaResetResponse{
-		Success: false,
-		Message: "Mirasim reports limits through GET /v1/limits and offers no route that resets them.",
-	}, nil
+// ResetQuota spends one Mirasim reset card. Every outcome the relay can report
+// is an answer rather than a transport failure, so an expected refusal (no
+// card, already redeemed, expired) comes back as a readable message instead of
+// an error the panel would render as a raw upstream fault.
+func (p *Provider) ResetQuota(ctx context.Context, req pluginapi.QuotaResetRequest) (pluginapi.QuotaResetResponse, error) {
+	storage, errParse := credentials.Parse(req.StorageJSON, p.settings)
+	if errParse != nil {
+		return pluginapi.QuotaResetResponse{}, errParse
+	}
+	if storage == nil {
+		return pluginapi.QuotaResetResponse{}, fmt.Errorf("selected auth is not a Mirasim credential")
+	}
+	if req.HTTPClient == nil {
+		return pluginapi.QuotaResetResponse{}, fmt.Errorf("host HTTP client is required")
+	}
+	result, errReset := p.pool.Client(*storage).ResetQuota(ctx, req.HTTPClient)
+	if errReset != nil {
+		return pluginapi.QuotaResetResponse{}, errReset
+	}
+	return resetOutcomeResponse(result), nil
+}
+
+func resetOutcomeResponse(result mirasim.ResetCardResult) pluginapi.QuotaResetResponse {
+	switch result.Outcome {
+	case mirasim.ResetOutcomeReset:
+		message := "Redeemed a Mirasim reset card"
+		if len(result.Windows) > 0 {
+			message += " and cleared " + strings.Join(result.Windows, ", ")
+		}
+		return pluginapi.QuotaResetResponse{Success: true, Message: message + "."}
+	case mirasim.ResetOutcomeNothingToReset:
+		// The relay accepted the request and found nothing exhausted. Local
+		// routing state is still cleared, which is what the operator asked for.
+		return pluginapi.QuotaResetResponse{
+			Success: true,
+			Message: "Mirasim reported nothing to reset; no window was exhausted.",
+		}
+	case mirasim.ResetOutcomeNoCard:
+		return pluginapi.QuotaResetResponse{
+			Success: false,
+			Message: "No Mirasim reset card is available to redeem.",
+		}
+	case mirasim.ResetOutcomeAlreadyRedeemed:
+		return pluginapi.QuotaResetResponse{
+			Success: false,
+			Message: "That Mirasim reset card had already been redeemed.",
+		}
+	case mirasim.ResetOutcomeExpired:
+		return pluginapi.QuotaResetResponse{
+			Success: false,
+			Message: "That Mirasim reset card expired before it could be redeemed.",
+		}
+	case mirasim.ResetOutcomeRevoked:
+		return pluginapi.QuotaResetResponse{
+			Success: false,
+			Message: "That Mirasim reset card was revoked.",
+		}
+	case mirasim.ResetOutcomeUnsupported:
+		return pluginapi.QuotaResetResponse{
+			Success: false,
+			Message: "This Mirasim relay does not offer reset cards for the account.",
+		}
+	case "":
+		return pluginapi.QuotaResetResponse{
+			Success: false,
+			Message: "Mirasim did not report a reset outcome.",
+		}
+	default:
+		return pluginapi.QuotaResetResponse{
+			Success: false,
+			Message: fmt.Sprintf("Mirasim returned an unrecognized reset outcome %q.", result.Outcome),
+		}
+	}
 }
 
 // Normalize converts an observed limits snapshot into the shape CPA's quota

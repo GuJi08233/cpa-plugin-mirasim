@@ -95,22 +95,21 @@ func TestABIQuotaProviderAnswersDescribeAndIdentifier(t *testing.T) {
 	if errDecode := json.Unmarshal(envelope.Result, &describe); errDecode != nil {
 		t.Fatalf("decode quota describe: %v", errDecode)
 	}
-	if describe.SupportsReset || len(describe.SupportedProviders) != 1 || describe.SupportedProviders[0] != "mirasim" {
+	if !describe.SupportsReset || len(describe.SupportedProviders) != 1 || describe.SupportedProviders[0] != "mirasim" {
 		t.Fatalf("describe = %#v", describe)
 	}
 
-	// Reset must answer over the ABI instead of failing the call, so the page
-	// can say the account has no reset route.
+	// Reset must answer over the ABI. Without a credential it has to refuse
+	// rather than report a reset it did not perform.
 	raw, errReset := handleABIMethod(context.Background(), pluginabi.MethodQuotaReset, []byte(`{}`))
 	if errReset != nil {
 		t.Fatalf("quota reset error = %v", errReset)
 	}
-	if errDecode := json.Unmarshal(raw, &envelope); errDecode != nil || !envelope.OK {
+	if errDecode := json.Unmarshal(raw, &envelope); errDecode != nil {
 		t.Fatalf("quota reset envelope = %s, error = %v", raw, errDecode)
 	}
-	var reset pluginapi.QuotaResetResponse
-	if errDecode := json.Unmarshal(envelope.Result, &reset); errDecode != nil || reset.Success {
-		t.Fatalf("reset = %#v, error = %v", reset, errDecode)
+	if envelope.OK || envelope.Error == nil || !strings.Contains(envelope.Error.Message, "not a Mirasim credential") {
+		t.Fatalf("quota reset envelope = %s", raw)
 	}
 }
 

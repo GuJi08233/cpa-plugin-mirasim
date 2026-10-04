@@ -16,7 +16,7 @@ func percent(value float64) *float64 { return &value }
 
 func newProvider() *Provider { return New(pluginconfig.Defaults(), mirasim.NewPool()) }
 
-func TestDescribeQuotaClaimsOnlyMirasimAndNoReset(t *testing.T) {
+func TestDescribeQuotaClaimsOnlyMirasimAndAdvertisesReset(t *testing.T) {
 	resp, errDescribe := newProvider().DescribeQuota(context.Background(), pluginapi.QuotaDescribeRequest{})
 	if errDescribe != nil {
 		t.Fatalf("DescribeQuota() error = %v", errDescribe)
@@ -24,17 +24,59 @@ func TestDescribeQuotaClaimsOnlyMirasimAndNoReset(t *testing.T) {
 	if len(resp.SupportedProviders) != 1 || resp.SupportedProviders[0] != credentials.Provider {
 		t.Fatalf("supported providers = %#v", resp.SupportedProviders)
 	}
-	if resp.SupportsReset {
-		t.Fatal("Mirasim has no reset route and must not advertise one")
+	// Mirasim grants reset cards, so a panel that hides the action would hide a
+	// capability the account actually has.
+	if !resp.SupportsReset {
+		t.Fatal("Mirasim reset cards are redeemable and must be advertised")
 	}
 }
 
-func TestResetQuotaRefusesWithoutCallingUpstream(t *testing.T) {
-	resp, errReset := newProvider().ResetQuota(context.Background(), pluginapi.QuotaResetRequest{})
-	if errReset != nil {
+func TestResetQuotaRejectsForeignCredentials(t *testing.T) {
+	_, errReset := newProvider().ResetQuota(context.Background(), pluginapi.QuotaResetRequest{
+		StorageJSON: []byte(`{"type":"other"}`),
+	})
+	if errReset == nil || !strings.Contains(errReset.Error(), "not a Mirasim credential") {
 		t.Fatalf("ResetQuota() error = %v", errReset)
 	}
-	if resp.Success || !strings.Contains(resp.Message, "/v1/limits") {
+}
+
+// Every outcome the relay can report has to reach the operator as a readable
+// answer, and only the two accepted outcomes may clear local routing state.
+func TestResetOutcomeResponseMapsEveryRelayOutcome(t *testing.T) {
+	tests := []struct {
+		outcome     string
+		wantSuccess bool
+		wantMessage string
+	}{
+		{mirasim.ResetOutcomeReset, true, "Redeemed a Mirasim reset card."},
+		{mirasim.ResetOutcomeNothingToReset, true, "nothing to reset"},
+		{mirasim.ResetOutcomeNoCard, false, "No Mirasim reset card is available"},
+		{mirasim.ResetOutcomeAlreadyRedeemed, false, "already been redeemed"},
+		{mirasim.ResetOutcomeExpired, false, "expired"},
+		{mirasim.ResetOutcomeRevoked, false, "revoked"},
+		{mirasim.ResetOutcomeUnsupported, false, "does not offer reset cards"},
+		{"", false, "did not report a reset outcome"},
+		{"somethingNew", false, "unrecognized reset outcome"},
+	}
+	for _, test := range tests {
+		t.Run(test.outcome, func(t *testing.T) {
+			resp := resetOutcomeResponse(mirasim.ResetCardResult{Outcome: test.outcome})
+			if resp.Success != test.wantSuccess {
+				t.Fatalf("success = %v, want %v (%#v)", resp.Success, test.wantSuccess, resp)
+			}
+			if !strings.Contains(resp.Message, test.wantMessage) {
+				t.Fatalf("message = %q, want it to contain %q", resp.Message, test.wantMessage)
+			}
+		})
+	}
+}
+
+func TestResetOutcomeResponseNamesTheClearedWindows(t *testing.T) {
+	resp := resetOutcomeResponse(mirasim.ResetCardResult{
+		Outcome: mirasim.ResetOutcomeReset,
+		Windows: []string{"5h", "7d"},
+	})
+	if !resp.Success || !strings.Contains(resp.Message, "5h, 7d") {
 		t.Fatalf("reset response = %#v", resp)
 	}
 }
