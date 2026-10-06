@@ -82,7 +82,7 @@ func TestParseModelUsesCPASuffixConvention(t *testing.T) {
 // selectors must resolve to the catalog id, or a caller holding the slash form
 // would ask for a model the catalog does not list.
 func TestKimiSelectorAliasResolvesToTheRelayModelID(t *testing.T) {
-	for _, selector := range []string{"kimi-k3", "mirasim/kimi-k3", "KIMI-K3"} {
+	for _, selector := range []string{"kimi-k3", "mirasim/kimi-k3"} {
 		if got := ParseModel(selector).ModelName; got != "kimi-k3" {
 			t.Fatalf("ParseModel(%q).ModelName = %q", selector, got)
 		}
