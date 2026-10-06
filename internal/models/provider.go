@@ -27,7 +27,8 @@ var fallbackModelIDs = []string{
 	"gpt-5.6-terra",
 	"deepseek-flash",
 	"glm-5.3-flash",
-	"kimi-code/k3",
+	"kimi-k3",
+	"gemini-3.1-pro-preview",
 }
 
 var imageModelIDs = []string{
@@ -143,11 +144,17 @@ var modelDefinitions = map[string]modelDefinition{
 		methods:     []string{"messages", "countTokens"}, parameters: []string{"max_tokens", "stop_sequences", "tools", "tool_choice", "thinking", "output_config"},
 		thinking: &pluginapi.ThinkingSupport{DynamicAllowed: true, Levels: []string{"low", "high", "max"}}, modelType: "glm", owner: "z-ai",
 	},
-	"kimi-code/k3": {
+	"kimi-k3": {
 		displayName: "Kimi K3", context: 1048576,
 		description: "Kimi K3 via Mirasim",
 		methods:     []string{"messages", "countTokens"}, parameters: []string{"max_tokens", "stop_sequences", "tools", "tool_choice", "thinking", "output_config"},
 		thinking: &pluginapi.ThinkingSupport{DynamicAllowed: true, Levels: []string{"low", "high", "max"}}, modelType: "kimi", owner: "moonshot",
+	},
+	"gemini-3.1-pro-preview": {
+		displayName: "Gemini 3.1 Pro Preview", context: 1000000,
+		description: "Google Gemini 3.1 Pro Preview via Mirasim",
+		methods:     []string{"messages", "countTokens"}, parameters: []string{"max_tokens", "stop_sequences", "tools", "tool_choice", "thinking", "output_config"},
+		thinking: &pluginapi.ThinkingSupport{DynamicAllowed: true, Levels: []string{"low", "medium", "high"}}, modelType: "gemini", owner: "google",
 	},
 }
 
@@ -281,7 +288,8 @@ func isExposedModel(id string) bool {
 		return false
 	}
 	return strings.HasPrefix(id, "claude-") || strings.HasPrefix(id, "gpt-") ||
-		strings.HasPrefix(id, "deepseek-") || strings.HasPrefix(id, "glm-") || strings.HasPrefix(id, "kimi-")
+		strings.HasPrefix(id, "deepseek-") || strings.HasPrefix(id, "glm-") || strings.HasPrefix(id, "kimi-") ||
+		strings.HasPrefix(id, "gemini-")
 }
 
 func modelInfo(id, object string, created int64, owner string) pluginapi.ModelInfo {
@@ -336,7 +344,7 @@ func genericDefinition(id string) modelDefinition {
 	if strings.HasPrefix(id, "gpt-image-") {
 		return modelDefinition{modelType: "openai-image", methods: []string{"images/generations", "images/edits"}, owner: "openai"}
 	}
-	if strings.HasPrefix(id, "claude-") || strings.HasPrefix(id, "deepseek-") || strings.HasPrefix(id, "glm-") || strings.HasPrefix(id, "kimi-") {
+	if strings.HasPrefix(id, "claude-") || strings.HasPrefix(id, "deepseek-") || strings.HasPrefix(id, "glm-") || strings.HasPrefix(id, "kimi-") || strings.HasPrefix(id, "gemini-") {
 		modelType := "claude"
 		switch {
 		case strings.HasPrefix(id, "deepseek-"):
@@ -345,6 +353,8 @@ func genericDefinition(id string) modelDefinition {
 			modelType = "glm"
 		case strings.HasPrefix(id, "kimi-"):
 			modelType = "kimi"
+		case strings.HasPrefix(id, "gemini-"):
+			modelType = "gemini"
 		}
 		return modelDefinition{
 			modelType: modelType, methods: []string{"messages", "countTokens"},

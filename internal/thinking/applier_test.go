@@ -77,22 +77,28 @@ func TestParseModelUsesCPASuffixConvention(t *testing.T) {
 	}
 }
 
-// The relay serves "kimi-code/k3", and earlier plugin releases republished it
-// as "kimi-k3". Both selectors must resolve to the id the relay serves, or a
-// caller holding the alias would ask for a model that does not exist.
+// The relay's servable catalog serves "kimi-k3", and a plugin release in
+// between republished it under the roster's slash form "kimi-code/k3". Both
+// selectors must resolve to the catalog id, or a caller holding the slash form
+// would ask for a model the catalog does not list.
 func TestKimiSelectorAliasResolvesToTheRelayModelID(t *testing.T) {
 	for _, selector := range []string{"kimi-k3", "mirasim/kimi-k3", "KIMI-K3"} {
-		if got := ParseModel(selector).ModelName; got != "kimi-code/k3" {
+		if got := ParseModel(selector).ModelName; got != "kimi-k3" {
+			t.Fatalf("ParseModel(%q).ModelName = %q", selector, got)
+		}
+	}
+	for _, selector := range []string{"kimi-code/k3", "mirasim/kimi-code/k3", "KIMI-CODE/K3"} {
+		if got := ParseModel(selector).ModelName; got != "kimi-k3" {
 			t.Fatalf("ParseModel(%q).ModelName = %q", selector, got)
 		}
 	}
 	// A thinking suffix must not survive the alias either.
-	parsed := ParseModel("kimi-k3(high)")
-	if parsed.ModelName != "kimi-code/k3" || parsed.Config.Level != "high" {
+	parsed := ParseModel("kimi-code/k3(high)")
+	if parsed.ModelName != "kimi-k3" || parsed.Config.Level != "high" {
 		t.Fatalf("parsed = %#v", parsed)
 	}
-	// The relay's own id is left alone.
-	if got := UpstreamModelID("kimi-code/k3"); got != "kimi-code/k3" {
+	// The catalog id is left alone.
+	if got := UpstreamModelID("kimi-k3"); got != "kimi-k3" {
 		t.Fatalf("UpstreamModelID() = %q", got)
 	}
 	if got := UpstreamModelID("  claude-sonnet-5  "); got != "claude-sonnet-5" {
@@ -101,12 +107,12 @@ func TestKimiSelectorAliasResolvesToTheRelayModelID(t *testing.T) {
 }
 
 func TestSelectorAliasesForNamesThePublishedSelectors(t *testing.T) {
-	aliases := SelectorAliasesFor("kimi-code/k3")
-	if len(aliases) != 1 || aliases[0] != "kimi-k3" {
+	aliases := SelectorAliasesFor("kimi-k3")
+	if len(aliases) != 1 || aliases[0] != "kimi-code/k3" {
 		t.Fatalf("aliases = %#v", aliases)
 	}
 	// An alias must not report itself, or publication would loop.
-	if got := SelectorAliasesFor("kimi-k3"); len(got) != 0 {
+	if got := SelectorAliasesFor("kimi-code/k3"); len(got) != 0 {
 		t.Fatalf("SelectorAliasesFor(alias) = %#v", got)
 	}
 	if got := SelectorAliasesFor("claude-sonnet-5"); len(got) != 0 {
@@ -129,6 +135,25 @@ func TestDeepSeekOffKeepsItsOwnEffort(t *testing.T) {
 	_, err = ApplyForWire([]byte(`{}`), "claude-sonnet-5", wireClaude, parsed.Config)
 	if err == nil {
 		t.Fatal("Claude unexpectedly accepted the DeepSeek-only off effort")
+	}
+}
+
+func TestGeminiEffortLadder(t *testing.T) {
+	body := []byte(`{"model":"gemini-3.1-pro-preview","max_tokens":4096,"messages":[]}`)
+	for _, effort := range []string{"low", "medium", "high"} {
+		out, errApply := ApplyForWire(body, "gemini-3.1-pro-preview", wireClaude, pluginapi.ThinkingConfig{Mode: "level", Level: effort})
+		if errApply != nil || gjson.GetBytes(out, "thinking.type").String() != "adaptive" || gjson.GetBytes(out, "output_config.effort").String() != effort {
+			t.Fatalf("effort %q body = %s, error = %v", effort, out, errApply)
+		}
+	}
+	// Gemini takes the effort form but not max or off.
+	for _, invalid := range []string{"max", "off"} {
+		if _, errApply := ApplyForWire(body, "gemini-3.1-pro-preview", wireClaude, pluginapi.ThinkingConfig{Mode: "level", Level: invalid}); errApply == nil {
+			t.Fatalf("gemini accepted unsupported effort %q", invalid)
+		}
+	}
+	if _, errNone := ApplyForWire(body, "gemini-3.1-pro-preview", wireClaude, pluginapi.ThinkingConfig{Mode: "none"}); errNone == nil {
+		t.Fatal("gemini unexpectedly accepted a disabled thinking mode")
 	}
 }
 

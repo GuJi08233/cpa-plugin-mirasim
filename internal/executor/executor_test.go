@@ -119,6 +119,15 @@ func TestBuildProviderRequestRoutesByModelAndClientProtocol(t *testing.T) {
 			wantStream: false,
 		},
 		{
+			name:       "Gemini model uses Messages from OpenAI client",
+			model:      "gemini-3.1-pro-preview",
+			format:     sdktranslator.FormatOpenAI,
+			payload:    `{"model":"gemini-3.1-pro-preview","messages":[{"role":"user","content":"hello"}]}`,
+			wantPath:   "/v1/messages",
+			wantFormat: sdktranslator.FormatClaude,
+			wantStream: false,
+		},
+		{
 			name:       "Gemini client to GPT uses Codex Responses",
 			model:      "gpt-5.6-sol",
 			format:     sdktranslator.FormatGemini,
@@ -157,11 +166,12 @@ func TestBuildProviderRequestRoutesByModelAndClientProtocol(t *testing.T) {
 	}
 }
 
-// The relay serves "kimi-code/k3". Both the id its catalog publishes and the
-// "kimi-k3" selector earlier plugin releases shipped have to reach it, because
-// asking upstream for the alias would name a model the relay does not serve.
+// The relay's servable catalog serves "kimi-k3", and a plugin release in
+// between republished it under the roster's slash form "kimi-code/k3". Both
+// have to reach the catalog id, because asking upstream for the slash form
+// would name a model the catalog does not list.
 func TestKimiSelectorsReachTheRelayModelID(t *testing.T) {
-	for _, model := range []string{"kimi-code/k3", "kimi-k3", "mirasim/kimi-k3"} {
+	for _, model := range []string{"kimi-code/k3", "kimi-k3", "mirasim/kimi-k3", "mirasim/kimi-code/k3"} {
 		body, route, errBuild := buildProviderRequest(pluginapi.ExecutorRequest{
 			Model:        model,
 			SourceFormat: sdktranslator.FormatOpenAI.String(),
@@ -178,7 +188,7 @@ func TestKimiSelectorsReachTheRelayModelID(t *testing.T) {
 		if errDecode := json.Unmarshal(body, &decoded); errDecode != nil {
 			t.Fatalf("request body for %q is invalid JSON: %v\n%s", model, errDecode, body)
 		}
-		if decoded["model"] != "kimi-code/k3" {
+		if decoded["model"] != "kimi-k3" {
 			t.Fatalf("model on the wire for %q = %#v", model, decoded["model"])
 		}
 	}

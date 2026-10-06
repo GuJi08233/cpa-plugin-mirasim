@@ -35,9 +35,10 @@ func TestParseRosterMergesTopLevelModelsAndNewAgents(t *testing.T) {
 	if !ok || deepseek.MaxOutput != 384000 || len(deepseek.Effort) != 2 || deepseek.Effort[0] != "off" {
 		t.Fatalf("merged DeepSeek = %#v", deepseek)
 	}
-	// The relay's own id has to survive parsing unchanged: roster metadata is
-	// looked up by the id the account catalog publishes.
-	kimi, ok := roster.Spec("kimi-code/k3")
+	// The signed roster names the Kimi agent "kimi-code/k3", but the servable
+	// catalog serves "kimi-k3". Roster metadata is looked up by the catalog id,
+	// so parsing has to store it under that id.
+	kimi, ok := roster.Spec("kimi-k3")
 	if !ok || kimi.ContextWindow != 1048576 {
 		t.Fatalf("official Kimi agent entry was ignored: %#v", kimi)
 	}

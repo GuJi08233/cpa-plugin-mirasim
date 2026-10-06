@@ -74,7 +74,7 @@ func (a *Applier) Identifier() string { return "mirasim" }
 func (a *Applier) ApplyThinking(_ context.Context, req pluginapi.ThinkingApplyRequest) (pluginapi.PayloadResponse, error) {
 	model := ParseModel(req.Model.ID).ModelName
 	wire := wireCodex
-	if strings.HasPrefix(strings.ToLower(model), "claude-") || strings.HasPrefix(strings.ToLower(model), "deepseek-") || strings.HasPrefix(strings.ToLower(model), "glm-") || strings.HasPrefix(strings.ToLower(model), "kimi-") {
+	if strings.HasPrefix(strings.ToLower(model), "claude-") || strings.HasPrefix(strings.ToLower(model), "deepseek-") || strings.HasPrefix(strings.ToLower(model), "glm-") || strings.HasPrefix(strings.ToLower(model), "kimi-") || strings.HasPrefix(strings.ToLower(model), "gemini-") {
 		wire = wireClaude
 	}
 	body, errApply := ApplyForWire(req.Body, model, wire, req.Config)
@@ -133,12 +133,13 @@ func parseContextSelector(parsed ParsedModel) ParsedModel {
 // selectorAliases maps a selector this plugin has published onto the model id
 // the relay's own catalog serves.
 //
-// Kimi is the only entry. The relay serves "kimi-code/k3" and earlier plugin
-// releases republished it as "kimi-k3". Both selectors have to keep resolving
-// while exactly one id reaches the relay: asking upstream for the alias would
-// name a model the relay does not serve.
+// Kimi is the only entry. The relay's servable catalog serves "kimi-k3"; a
+// plugin release in between republished it under the signed roster's slash form
+// "kimi-code/k3". Both selectors have to keep resolving while exactly one id
+// reaches the relay: the catalog does not list the slash form, so asking
+// upstream for it would name a model the relay does not serve.
 var selectorAliases = map[string]string{
-	"kimi-k3": "kimi-code/k3",
+	"kimi-code/k3": "kimi-k3",
 }
 
 // UpstreamModelID resolves a published selector to the id the relay serves. A
@@ -289,7 +290,7 @@ func applyClaude(body []byte, model string, config pluginapi.ThinkingConfig, sha
 			body = deletePath(body, "thinking")
 			return setString(body, "output_config.effort", "off"), nil
 		}
-		if strings.HasPrefix(model, "glm-") || strings.HasPrefix(model, "kimi-") {
+		if strings.HasPrefix(model, "glm-") || strings.HasPrefix(model, "kimi-") || strings.HasPrefix(model, "gemini-") {
 			return body, &ConfigError{Code: "mirasim_effort_invalid", Message: fmt.Sprintf("%s does not offer an off effort", model)}
 		}
 		body = setString(body, "thinking.type", "disabled")
@@ -342,6 +343,8 @@ func modelAcceptsEffort(model, level string) bool {
 		return level == "low" || level == "high" || level == "max"
 	case strings.HasPrefix(model, "glm-"), strings.HasPrefix(model, "kimi-"):
 		return level == "low" || level == "high" || level == "max"
+	case strings.HasPrefix(model, "gemini-"):
+		return level == "low" || level == "medium" || level == "high"
 	default:
 		return isRelayEffort(level)
 	}

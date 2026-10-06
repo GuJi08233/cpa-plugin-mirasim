@@ -171,8 +171,8 @@ func TestStaticModelsPublishNothingForAnOAuthOnlyExecutor(t *testing.T) {
 func TestFallbackCatalogCoversOfficialBuiltinFamilies(t *testing.T) {
 	models := publishModels(fallbackModels())
 	// Every fallback id, plus six [1m] selectors for the million-token Claude
-	// models, five gpt-image routes, and the "kimi-k3" selector earlier
-	// releases published for "kimi-code/k3".
+	// models, five gpt-image routes, and the "kimi-code/k3" alias a release in
+	// between published for "kimi-k3".
 	if len(models) != len(fallbackModelIDs)+6+5+1 {
 		t.Fatalf("model count = %d, want %d: %v", len(models), len(fallbackModelIDs)+6+5+1, modelIDs(models))
 	}
@@ -198,7 +198,7 @@ func TestFallbackCatalogCoversOfficialBuiltinFamilies(t *testing.T) {
 			if model.SupportedGenerationMethods[0] != "responses" {
 				t.Fatalf("GPT model advertises wrong route: %#v", model)
 			}
-		case "deepseek", "glm", "kimi":
+		case "deepseek", "glm", "kimi", "gemini":
 			if model.SupportedGenerationMethods[0] != "messages" {
 				t.Fatalf("model advertises wrong route: %#v", model)
 			}
@@ -241,14 +241,18 @@ func TestFallbackCatalogCoversOfficialBuiltinFamilies(t *testing.T) {
 	if glm := byID["glm-5.3-flash"]; glm.Type != "glm" || glm.ContextLength != 1000000 || glm.MaxCompletionTokens != 0 {
 		t.Fatalf("GLM metadata = %#v", glm)
 	}
-	// The relay serves "kimi-code/k3". The plugin also keeps publishing the
-	// "kimi-k3" selector older releases shipped, and both entries have to
-	// carry the same metadata so a caller holding either one is unaffected.
-	kimi := byID["kimi-code/k3"]
+	if gemini := byID["gemini-3.1-pro-preview"]; gemini.Type != "gemini" || gemini.ContextLength != 1000000 || gemini.MaxCompletionTokens != 0 || gemini.Thinking == nil || len(gemini.Thinking.Levels) != 3 || gemini.Thinking.Levels[0] != "low" || gemini.Thinking.Levels[1] != "medium" || gemini.Thinking.Levels[2] != "high" {
+		t.Fatalf("Gemini metadata = %#v", gemini)
+	}
+	// The relay's servable catalog serves "kimi-k3". The plugin also keeps
+	// publishing the "kimi-code/k3" selector a release in between shipped, and
+	// both entries have to carry the same metadata so a caller holding either
+	// one is unaffected.
+	kimi := byID["kimi-k3"]
 	if kimi.Type != "kimi" || kimi.ContextLength != 1048576 || kimi.MaxCompletionTokens != 0 {
 		t.Fatalf("Kimi metadata = %#v", kimi)
 	}
-	alias := byID["kimi-k3"]
+	alias := byID["kimi-code/k3"]
 	if alias.Type != kimi.Type || alias.ContextLength != kimi.ContextLength ||
 		alias.MaxCompletionTokens != kimi.MaxCompletionTokens || alias.DisplayName != kimi.DisplayName ||
 		len(alias.Thinking.Levels) != len(kimi.Thinking.Levels) {
@@ -262,10 +266,11 @@ func TestExposedModelsIncludesOfficialBuiltinCatalogEntries(t *testing.T) {
 		{ID: "gpt-5.6-sol", Object: "model", OwnedBy: "openai"},
 		{ID: " Claude-Opus-5 ", Object: "model", OwnedBy: "anthropic"},
 		{ID: "kimi-k3", Object: "model", OwnedBy: "other"},
+		{ID: "gemini-3.1-pro-preview", Object: "model", OwnedBy: "google"},
 	})
 
-	if len(models) != 4 {
-		t.Fatalf("exposedModels() returned %d models, want 4: %#v", len(models), models)
+	if len(models) != 5 {
+		t.Fatalf("exposedModels() returned %d models, want 5: %#v", len(models), models)
 	}
 	for _, model := range models {
 		if !isExposedModel(model.ID) {

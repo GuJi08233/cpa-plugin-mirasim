@@ -2,7 +2,7 @@
 
 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) 的 Mirasim 插件。用浏览器、命令行或邮箱验证码登录，凭证由 CPA 写进 `auth-dir` 并自动刷新。支持动态模型、流式输出、工具调用、图像接口和额度查询。
 
-GPT 走 Responses。Claude、DeepSeek、GLM、Kimi 走 Messages。
+GPT 走 Responses。Claude、DeepSeek、GLM、Kimi、Gemini 走 Messages。
 
 ## 要求
 
@@ -102,13 +102,13 @@ docker exec -it <容器名> ./CLIProxyAPI -config <配置文件> --mirasim-login
 
 模型列表来自该账号的目录。目录请求失败时，沿用这个凭证上次成功的列表；没有缓存时使用插件自带的默认列表，成员只是临时的，目录恢复后会换成账号实际返回的结果。列表里有某个模型，也不表示当前还有额度。
 
-思考力度写在模型名后，例如 `claude-sonnet-5(high)`。Claude 和 GPT 接受 `low`、`medium`、`high`、`xhigh`、`max`、`ultra`。`ultra` 按 `max` 发送，这里不会执行官方客户端的多轮编排，因此它和 `max` 是同一次请求。DeepSeek 另接受 `off`。GLM 和 Kimi 接受 `low`、`high`、`max`。不支持的力度返回 HTTP 400。
+思考力度写在模型名后，例如 `claude-sonnet-5(high)`。Claude 和 GPT 接受 `low`、`medium`、`high`、`xhigh`、`max`、`ultra`。`ultra` 按 `max` 发送，这里不会执行官方客户端的多轮编排，因此它和 `max` 是同一次请求。DeepSeek 另接受 `off`。GLM 和 Kimi 接受 `low`、`high`、`max`，Gemini 接受 `low`、`medium`、`high`。不支持的力度返回 HTTP 400。
 
 已知上下文至少 100 万 token 的 Claude 还可以加 `[1m]`，例如 `claude-sonnet-5[1m](high)`。转发前会去掉这两个后缀，真实模型名不变。
 
 账号目录含有 GPT 时，CPA 还会列出 `gpt-image-*`。这些是路由别名，账号能否生图由中继决定。`/v1/images/generations` 和 `/v1/images/edits` 会转到 Mirasim，也包括 Codex 的 `/backend-api/codex/images/*`。Codex 压缩请求走 `/v1/responses/compact`，别名是 `/backend-api/codex/responses/compact`。
 
-Kimi 的模型名以中继目录为准，现在是 `kimi-code/k3`。早期版本把它写成 `kimi-k3`，这个写法仍然可用：列表里两个名字都会出现，转发时统一换成 `kimi-code/k3`。同理，模型名里的 `mirasim/` 前缀会被去掉。
+Kimi 的模型名以中继目录为准，现在是 `kimi-k3`。中间有个版本把它写成 `kimi-code/k3`，这个写法仍然可用：列表里两个名字都会出现，转发时统一换成 `kimi-k3`。同理，模型名里的 `mirasim/` 前缀会被去掉。
 
 用 Claude Code 或 Codex 做一次真实请求来确认。手写的极简 Messages 请求失败，不能说明客户端不可用。插件不读取仓库路径或 Git 信息。
 
