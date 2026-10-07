@@ -364,8 +364,6 @@ func modelAcceptsEffort(model, level string) bool {
 		return level == "low" || level == "high" || level == "max"
 	case strings.HasPrefix(model, "glm-"), strings.HasPrefix(model, "kimi-"):
 		return level == "low" || level == "high" || level == "max"
-	case strings.HasPrefix(model, "gemini-"):
-		return level == "low" || level == "medium" || level == "high"
 	default:
 		return isRelayEffort(level)
 	}
