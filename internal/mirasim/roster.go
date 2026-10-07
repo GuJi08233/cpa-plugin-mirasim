@@ -169,8 +169,9 @@ func (r ModelRoster) Spec(modelID string) (ModelSpec, bool) {
 }
 
 // ThinkingAdaptive reports the signed roster's adaptive flag for one model.
-// The second result is false when the roster carries no entry for it, which
-// leaves the upstream thinking form to the caller's default.
+// The second result is false when no thinking form is specified. Only Claude
+// agent entries implicitly select a token budget when adaptive is absent;
+// other agents use effort controls independently of Claude's adaptive flag.
 func (r ModelRoster) ThinkingAdaptive(modelID string) (bool, bool) {
 	modelID = strings.ToLower(strings.TrimSpace(modelID))
 	if modelID == "" {
@@ -183,11 +184,9 @@ func (r ModelRoster) ThinkingAdaptive(modelID string) (bool, bool) {
 	if spec.AdaptiveSet {
 		return spec.Adaptive, true
 	}
-	for _, specs := range r.Agents {
-		for _, agent := range specs {
-			if agent.ID == modelID {
-				return agent.Adaptive, true
-			}
+	for _, agent := range r.Agents["claude"] {
+		if agent.ID == modelID {
+			return agent.Adaptive, true
 		}
 	}
 	return false, false
