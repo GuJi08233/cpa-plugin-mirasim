@@ -239,6 +239,8 @@ func relayAgentForRequest(requestPath string, body []byte) string {
 		return "zcode"
 	case strings.HasPrefix(model, "kimi-"):
 		return "kimi"
+	case strings.HasPrefix(model, "gemini-"):
+		return "pi"
 	default:
 		return relayAgent(requestPath)
 	}

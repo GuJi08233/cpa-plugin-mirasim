@@ -297,7 +297,7 @@ func selectWireFormat(model string, source sdktranslator.Format) sdktranslator.F
 	if strings.HasPrefix(normalizedModel, "gpt-") {
 		return sdktranslator.FormatCodex
 	}
-	if strings.HasPrefix(normalizedModel, "claude-") || strings.HasPrefix(normalizedModel, "deepseek-") || strings.HasPrefix(normalizedModel, "glm-") || strings.HasPrefix(normalizedModel, "kimi-") {
+	if strings.HasPrefix(normalizedModel, "claude-") || strings.HasPrefix(normalizedModel, "deepseek-") || strings.HasPrefix(normalizedModel, "glm-") || strings.HasPrefix(normalizedModel, "kimi-") || strings.HasPrefix(normalizedModel, "gemini-") {
 		return sdktranslator.FormatClaude
 	}
 	// Unknown model families retain the caller's native Claude shape.

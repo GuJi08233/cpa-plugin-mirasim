@@ -74,7 +74,7 @@ func (a *Applier) Identifier() string { return "mirasim" }
 func (a *Applier) ApplyThinking(_ context.Context, req pluginapi.ThinkingApplyRequest) (pluginapi.PayloadResponse, error) {
 	model := ParseModel(req.Model.ID).ModelName
 	wire := wireCodex
-	if strings.HasPrefix(strings.ToLower(model), "claude-") || strings.HasPrefix(strings.ToLower(model), "deepseek-") || strings.HasPrefix(strings.ToLower(model), "glm-") || strings.HasPrefix(strings.ToLower(model), "kimi-") {
+	if strings.HasPrefix(strings.ToLower(model), "claude-") || strings.HasPrefix(strings.ToLower(model), "deepseek-") || strings.HasPrefix(strings.ToLower(model), "glm-") || strings.HasPrefix(strings.ToLower(model), "kimi-") || strings.HasPrefix(strings.ToLower(model), "gemini-") {
 		wire = wireClaude
 	}
 	body, errApply := ApplyForWire(req.Body, model, wire, req.Config)
@@ -182,6 +182,7 @@ func ApplyForWire(body []byte, model, wire string, config pluginapi.ThinkingConf
 func ApplyForWireWithShape(body []byte, model, wire string, config pluginapi.ThinkingConfig, shape ModelShape) ([]byte, error) {
 	body = NormalizeWorkflowRequest(validBody(body))
 	config = normalizeConfig(config)
+	shape = defaultModelShape(model, shape)
 	switch strings.ToLower(strings.TrimSpace(wire)) {
 	case wireClaude:
 		return applyClaude(body, model, config, shape)
@@ -204,6 +205,7 @@ func NormalizeForWire(body []byte, model, wire string, shape ModelShape) []byte 
 	if strings.ToLower(strings.TrimSpace(wire)) != wireClaude {
 		return body
 	}
+	shape = defaultModelShape(model, shape)
 	config, ok := claudeBodyConfig(validBody(body), shape)
 	if !ok {
 		return body
@@ -213,6 +215,15 @@ func NormalizeForWire(body []byte, model, wire string, shape ModelShape) []byte 
 		return body
 	}
 	return normalized
+}
+
+func defaultModelShape(model string, shape ModelShape) ModelShape {
+	// The official Gemini Messages integration uses manual thinking unless
+	// the roster explicitly selects adaptive. Preserve translated budgets.
+	if shape == ShapeUnknown && strings.HasPrefix(strings.ToLower(strings.TrimSpace(model)), "gemini-") {
+		return ShapeBudget
+	}
+	return shape
 }
 
 // claudeBodyConfig maps the controls already present in a Claude payload onto
@@ -303,6 +314,16 @@ func applyClaude(body []byte, model string, config pluginapi.ThinkingConfig, sha
 		}
 		return applyManualClaude(body, 1024)
 	case "level":
+		if strings.HasPrefix(model, "gemini-") {
+			switch config.Level {
+			case "off":
+				return applyClaude(body, model, pluginapi.ThinkingConfig{Mode: "none"}, shape)
+			case "minimal":
+				if !adaptive {
+					return applyManualClaude(body, 1024)
+				}
+			}
+		}
 		if adaptive {
 			if config.Level == "off" && strings.HasPrefix(model, "deepseek-") {
 				body = deletePath(body, "thinking")

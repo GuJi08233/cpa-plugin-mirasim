@@ -168,6 +168,20 @@ func TestStaticModelsPublishNothingForAnOAuthOnlyExecutor(t *testing.T) {
 	}
 }
 
+func TestCatalogPublishesGeminiMessagesModel(t *testing.T) {
+	models := exposedModels([]mirasim.RemoteModel{{ID: "gemini-3.1-pro-preview", MaxInputTokens: 1048576}})
+	if len(models) != 1 {
+		t.Fatalf("Gemini missing from catalog: %v", modelIDs(models))
+	}
+	m := models[0]
+	if m.Type != "gemini" || m.OwnedBy != "google" || m.ContextLength != 1048576 || m.MaxCompletionTokens != 65536 || m.SupportedGenerationMethods[0] != "messages" {
+		t.Fatalf("Gemini metadata=%+v", m)
+	}
+	if m.Thinking == nil || m.Thinking.Min != 1024 || int64(m.Thinking.Max) >= m.MaxCompletionTokens {
+		t.Fatalf("Gemini budget metadata=%+v", m.Thinking)
+	}
+}
+
 func TestFallbackCatalogCoversOfficialBuiltinFamilies(t *testing.T) {
 	models := publishModels(fallbackModels())
 	// Every fallback id, plus six [1m] selectors for the million-token Claude
@@ -198,7 +212,7 @@ func TestFallbackCatalogCoversOfficialBuiltinFamilies(t *testing.T) {
 			if model.SupportedGenerationMethods[0] != "responses" {
 				t.Fatalf("GPT model advertises wrong route: %#v", model)
 			}
-		case "deepseek", "glm", "kimi":
+		case "deepseek", "glm", "kimi", "gemini":
 			if model.SupportedGenerationMethods[0] != "messages" {
 				t.Fatalf("model advertises wrong route: %#v", model)
 			}

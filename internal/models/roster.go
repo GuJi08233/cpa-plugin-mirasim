@@ -76,6 +76,8 @@ func rosterEffortSupported(modelType, level string) bool {
 		return level == "off" || level == "low" || level == "high" || level == "max"
 	case "glm", "kimi":
 		return level == "low" || level == "high" || level == "max"
+	case "gemini":
+		return level == "off" || level == "minimal" || level == "low" || level == "medium" || level == "high"
 	default:
 		switch level {
 		case "low", "medium", "high", "xhigh", "max", "ultra":
