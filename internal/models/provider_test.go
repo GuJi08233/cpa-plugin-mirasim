@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 
@@ -234,6 +235,32 @@ func TestCatalogPublishesGeminiMessagesModel(t *testing.T) {
 	}
 	if m.Thinking == nil || m.Thinking.Min != 1024 || int64(m.Thinking.Max) >= m.MaxCompletionTokens {
 		t.Fatalf("Gemini budget metadata=%+v", m.Thinking)
+	}
+}
+
+func TestPublishedRelayModelsAndAliasesDeclareImageInput(t *testing.T) {
+	models := publishModels(exposedModels([]mirasim.RemoteModel{
+		{ID: "claude-opus-5-5"}, {ID: "gpt-6-astra"}, {ID: "gpt-6.1-sol"},
+		{ID: "deepseek-flash"}, {ID: "kimi-code/k3"}, {ID: "glm-5.3-flash"}, {ID: "gemini-3.1-pro-preview"},
+	}))
+	seen := make(map[string]bool)
+	for _, model := range models {
+		seen[model.ID] = true
+		if !slices.Contains(model.SupportedInputModalities, "text") || !slices.Contains(model.SupportedInputModalities, "image") {
+			t.Errorf("%s hides image input: %v", model.ID, model.SupportedInputModalities)
+		}
+		wantOutput := "text"
+		if model.Type == "openai-image" {
+			wantOutput = "image"
+		}
+		if !slices.Equal(model.SupportedOutputModalities, []string{wantOutput}) {
+			t.Errorf("%s output modalities=%v, want %s", model.ID, model.SupportedOutputModalities, wantOutput)
+		}
+	}
+	for _, alias := range []string{"claude-opus-5-5[1m]", "kimi-k3", "gpt-image-2"} {
+		if !seen[alias] {
+			t.Errorf("missing alias %s", alias)
+		}
 	}
 }
 

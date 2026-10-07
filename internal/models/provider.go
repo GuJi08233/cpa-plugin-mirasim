@@ -350,12 +350,13 @@ func modelInfo(id, object string, created int64, owner string) pluginapi.ModelIn
 		ContextLength:              definition.context,
 		MaxCompletionTokens:        definition.output,
 		SupportedParameters:        cloneStrings(definition.parameters),
-		SupportedInputModalities:   []string{"text"},
-		SupportedOutputModalities:  []string{"text"},
-		Thinking:                   cloneThinking(definition.thinking),
+		// The official built-in provider declares text and image input for
+		// relay models. CPA copies this field into its model registry.
+		SupportedInputModalities:  []string{"text", "image"},
+		SupportedOutputModalities: []string{"text"},
+		Thinking:                  cloneThinking(definition.thinking),
 	}
 	if definition.modelType == "openai-image" {
-		model.SupportedInputModalities = []string{"text", "image"}
 		model.SupportedOutputModalities = []string{"image"}
 	}
 	return model
