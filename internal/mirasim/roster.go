@@ -24,9 +24,10 @@ type ModelSpec struct {
 }
 
 type ModelRoster struct {
-	Version string                 `json:"version"`
-	Agents  map[string][]ModelSpec `json:"agents"`
-	Models  map[string]ModelSpec   `json:"models"`
+	Version   string                 `json:"version"`
+	Agents    map[string][]ModelSpec `json:"agents"`
+	Models    map[string]ModelSpec   `json:"models"`
+	Withdrawn []string               `json:"withdrawn,omitempty"`
 }
 
 // PaidVariantModel reports whether a relay model ID names a "-paid" variant.
@@ -41,14 +42,27 @@ func PaidVariantModel(id string) bool {
 
 func parseRoster(raw []byte) (ModelRoster, error) {
 	var envelope struct {
-		Version string                       `json:"version"`
-		Agents  map[string][]json.RawMessage `json:"agents"`
-		Models  map[string]json.RawMessage   `json:"models"`
+		Version   string                       `json:"version"`
+		Agents    map[string][]json.RawMessage `json:"agents"`
+		Models    map[string]json.RawMessage   `json:"models"`
+		Withdrawn []json.RawMessage            `json:"withdrawn"`
 	}
 	if err := json.Unmarshal(raw, &envelope); err != nil || strings.TrimSpace(envelope.Version) == "" {
 		return ModelRoster{}, fmt.Errorf("invalid Mirasim model roster")
 	}
 	roster := ModelRoster{Version: envelope.Version, Agents: make(map[string][]ModelSpec), Models: make(map[string]ModelSpec)}
+	withdrawn := make(map[string]bool)
+	for _, raw := range envelope.Withdrawn {
+		var id string
+		if json.Unmarshal(raw, &id) != nil {
+			continue
+		}
+		id = strings.ToLower(strings.TrimSpace(id))
+		if id != "" && !withdrawn[id] {
+			roster.Withdrawn = append(roster.Withdrawn, id)
+			withdrawn[id] = true
+		}
+	}
 	for _, family := range []string{"claude", "codex", "dsh", "zcode", "kimi"} {
 		seen := map[string]bool{}
 		for _, entry := range envelope.Agents[family] {
@@ -95,7 +109,7 @@ func parseRoster(raw []byte) (ModelRoster, error) {
 		}
 		roster.Models[id] = spec
 	}
-	if len(roster.Agents) == 0 && len(roster.Models) == 0 {
+	if len(roster.Agents) == 0 && len(roster.Models) == 0 && len(roster.Withdrawn) == 0 {
 		return ModelRoster{}, fmt.Errorf("Mirasim model roster contains no valid supported models")
 	}
 	return roster, nil
@@ -194,6 +208,7 @@ func (r ModelRoster) ThinkingAdaptive(modelID string) (bool, bool) {
 
 func (r ModelRoster) Clone() ModelRoster {
 	out := ModelRoster{Version: r.Version, Agents: make(map[string][]ModelSpec), Models: make(map[string]ModelSpec)}
+	out.Withdrawn = append([]string(nil), r.Withdrawn...)
 	for k, v := range r.Agents {
 		for _, spec := range v {
 			spec.Effort = append([]string(nil), spec.Effort...)

@@ -68,7 +68,7 @@ func TestCatalogFailureUsesOfficialFallbackForExistingCredential(t *testing.T) {
 	for _, model := range response.Models {
 		byID[model.ID] = model
 	}
-	for _, id := range []string{"claude-opus-5-5", "claude-sonnet-5", "gpt-6-astra", "gpt-6-luna", "gpt-6-sol", "deepseek-flash", "glm-5.3-flash", "kimi-k3", "gpt-image-2"} {
+	for _, id := range []string{"claude-opus-5-5", "claude-sonnet-5-5", "gpt-6-astra", "gpt-6-luna", "gpt-6-sol", "deepseek-flash", "glm-5.3-flash", "kimi-k3", "gpt-image-2"} {
 		if _, ok := byID[id]; !ok {
 			t.Fatalf("fallback missing %s", id)
 		}
@@ -110,6 +110,61 @@ func TestCatalogFailureKeepsLastSuccessfulAccountModels(t *testing.T) {
 	}
 	if _, fallbackOnly := byID["deepseek-flash"]; fallbackOnly {
 		t.Fatal("fallback models replaced a cached account catalog")
+	}
+}
+
+func TestModelsForAuthFiltersWithdrawnModelsAndAliases(t *testing.T) {
+	for _, mode := range []string{"live", "cached", "fallback"} {
+		t.Run(mode, func(t *testing.T) {
+			storage := providerTestStorage(t)
+			pool := mirasim.NewPool()
+			catalogStatus := http.StatusOK
+			host := providerHostClient{do: func(_ context.Context, req pluginapi.HTTPRequest) (pluginapi.HTTPResponse, error) {
+				parsed, _ := url.Parse(req.URL)
+				switch parsed.Path {
+				case "/v1/device/session":
+					return pluginapi.HTTPResponse{StatusCode: 200, Body: []byte(`{"ticket":"ticket","expiresIn":900}`)}, nil
+				case "/v1/models":
+					return pluginapi.HTTPResponse{StatusCode: catalogStatus, Body: []byte(`{"data":[{"id":"claude-sonnet-5"},{"id":"claude-fable-5"},{"id":"claude-opus-5-5"},{"id":"kimi-code/k3"},{"id":"gpt-6-astra"}]}`)}, nil
+				case "/v1/model-roster":
+					return pluginapi.HTTPResponse{StatusCode: 200, Body: []byte(`{"version":"withdrawals","withdrawn":[" CLAUDE-SONNET-5 ","claude-fable-5","kimi-k3","gpt-image-2"],"models":{"claude-opus-5-5":{"contextWindow":1000000}}}`)}, nil
+				default:
+					return pluginapi.HTTPResponse{}, fmt.Errorf("unexpected path %s", parsed.Path)
+				}
+			}}
+			if mode == "cached" {
+				if _, err := pool.Client(storage).ListModels(context.Background(), host); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if mode != "live" {
+				catalogStatus = http.StatusServiceUnavailable
+			}
+			settings := pluginconfig.Defaults()
+			settings.ClientVersion = "test-client"
+			response, err := New(settings, pool).ModelsForAuth(context.Background(), pluginapi.AuthModelRequest{StorageJSON: storage.JSON(), HTTPClient: host})
+			if err != nil {
+				t.Fatal(err)
+			}
+			keptOpusAlias := false
+			for _, model := range response.Models {
+				if strings.HasPrefix(model.ID, "claude-sonnet-5[") || model.ID == "claude-sonnet-5" || strings.HasPrefix(model.ID, "claude-fable-5[") || model.ID == "claude-fable-5" || strings.HasPrefix(model.ID, "kimi-") || model.ID == "gpt-image-2" {
+					t.Errorf("withdrawn model or alias still published: %s", model.ID)
+				}
+				keptOpusAlias = keptOpusAlias || model.ID == "claude-opus-5-5[1m]"
+			}
+			if !keptOpusAlias {
+				t.Fatal("valid model alias was removed")
+			}
+		})
+	}
+}
+
+func TestColdFallbackDoesNotReviveKnownWithdrawnModels(t *testing.T) {
+	for _, model := range publishModels(fallbackModels()) {
+		if model.ID == "claude-sonnet-5" || model.ID == "claude-fable-5" {
+			t.Errorf("cold fallback publishes withdrawn model %s", model.ID)
+		}
 	}
 }
 
@@ -184,11 +239,11 @@ func TestCatalogPublishesGeminiMessagesModel(t *testing.T) {
 
 func TestFallbackCatalogCoversOfficialBuiltinFamilies(t *testing.T) {
 	models := publishModels(fallbackModels())
-	// Every fallback id, plus six [1m] selectors for the million-token Claude
+	// Every fallback id, plus five [1m] selectors for the million-token Claude
 	// models, five gpt-image routes, and the "kimi-k3" selector earlier
 	// releases published for "kimi-code/k3".
-	if len(models) != len(fallbackModelIDs)+6+5+1 {
-		t.Fatalf("model count = %d, want %d: %v", len(models), len(fallbackModelIDs)+6+5+1, modelIDs(models))
+	if len(models) != len(fallbackModelIDs)+5+5+1 {
+		t.Fatalf("model count = %d, want %d: %v", len(models), len(fallbackModelIDs)+5+5+1, modelIDs(models))
 	}
 	claudeCount := 0
 	gptCount := 0
@@ -220,7 +275,7 @@ func TestFallbackCatalogCoversOfficialBuiltinFamilies(t *testing.T) {
 			t.Fatalf("unexpected model family: %#v", model)
 		}
 	}
-	if claudeCount != 13 || gptCount != 6 {
+	if claudeCount != 11 || gptCount != 6 {
 		t.Fatalf("fallback family counts: Claude=%d GPT=%d", claudeCount, gptCount)
 	}
 	byID := make(map[string]pluginapi.ModelInfo, len(models))
@@ -231,7 +286,7 @@ func TestFallbackCatalogCoversOfficialBuiltinFamilies(t *testing.T) {
 	if astra.ContextLength != 1050000 || astra.MaxCompletionTokens != 128000 || astra.Thinking == nil {
 		t.Fatalf("Astra metadata=%+v", astra)
 	}
-	sonnet := byID["claude-sonnet-5"]
+	sonnet := byID["claude-sonnet-5-5"]
 	if sonnet.ContextLength != 1000000 || sonnet.MaxCompletionTokens != 128000 || sonnet.Thinking == nil || !sonnet.Thinking.DynamicAllowed || !sonnet.Thinking.ZeroAllowed || len(sonnet.Thinking.Levels) != 6 || sonnet.Thinking.Levels[0] != "low" || sonnet.Thinking.Levels[5] != "ultra" {
 		t.Fatalf("Claude Sonnet 5 metadata = %#v", sonnet)
 	}
