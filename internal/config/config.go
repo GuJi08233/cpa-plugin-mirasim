@@ -11,7 +11,7 @@ import (
 const (
 	DefaultRelayURL      = "https://relay.mirasim.ai"
 	DefaultAdminURL      = "https://auth.mirasim.ai"
-	DefaultClientVersion = "0.0.430"
+	DefaultClientVersion = "0.0.435"
 	// DefaultOAuthLoginProvider is the Mirasim sign-in provider used when neither
 	// the login caller nor the configuration names one.
 	DefaultOAuthLoginProvider = "github"

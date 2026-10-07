@@ -107,7 +107,7 @@ var modelDefinitions = map[string]modelDefinition{
 		methods:     []string{"messages", "countTokens"}, parameters: []string{"max_tokens", "stop_sequences", "tools", "tool_choice", "thinking", "output_config"},
 		thinking: adaptiveRelayThinking(), modelType: "claude", owner: "anthropic",
 	},
-	// Context windows come from the official 0.0.430 builtin agent catalog,
+	// Context windows come from the official 0.0.435 builtin agent catalog,
 	// the table used when the relay publishes none. Astra is 0x100590. GPT 6
 	// Sol, GPT 6 Luna and the GPT 5.6 models are 0xd4e40. The desktop
 	// model-picker list still shows the older 0.0.354 windows.
