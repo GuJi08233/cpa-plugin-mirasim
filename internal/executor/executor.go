@@ -50,7 +50,15 @@ func (e *Executor) Execute(ctx context.Context, req pluginapi.ExecutorRequest) (
 	if errClient != nil {
 		return pluginapi.ExecutorResponse{}, errClient
 	}
-	requestBody, route, errBuild := buildProviderRequest(req, false, claudeShape(client, req.Model))
+	outputFormat := responseFormat(req)
+	// CPA's non-stream response translators for the Claude wire aggregate SSE
+	// events. A plain Messages body would translate into an empty completion
+	// (for example an OpenAI choice with empty content), so when the response
+	// still has to be converted the upstream turn is streamed and its events are
+	// handed to the translator exactly as a streaming client would receive them.
+	upstreamStream := outputFormat != sdktranslator.FormatClaude &&
+		selectWireFormat(normalizeModel(req.Model), sourceFormat(req)) == sdktranslator.FormatClaude
+	requestBody, route, errBuild := buildProviderRequest(req, upstreamStream, claudeShape(client, req.Model))
 	if errBuild != nil {
 		return pluginapi.ExecutorResponse{}, errBuild
 	}
@@ -68,7 +76,6 @@ func (e *Executor) Execute(ctx context.Context, req pluginapi.ExecutorRequest) (
 			return pluginapi.ExecutorResponse{}, errDo
 		}
 	}
-	outputFormat := responseFormat(req)
 	payload, errTranslate := translateNonStream(ctx, route.Format, outputFormat, normalizeModel(req.Model), req.OriginalRequest, requestBody, upstreamPayload)
 	if errTranslate != nil {
 		return pluginapi.ExecutorResponse{}, errTranslate

@@ -588,6 +588,63 @@ func TestExecuteAggregatesCodexSSEForNonStreamingResponsesClient(t *testing.T) {
 	}
 }
 
+func TestExecuteAggregatesMessagesSSEForNonStreamingOpenAIClient(t *testing.T) {
+	storage := executorTestStorage(t)
+	// Every Claude-wire family answers /v1/chat/completions through the same
+	// non-stream translator, so each one needs the upstream turn streamed.
+	for _, model := range []string{"kimi-k3", "deepseek-flash", "glm-5.3-flash", "gemini-3.1-pro-preview", "claude-sonnet-5"} {
+		t.Run(model, func(t *testing.T) {
+			host := executorHostClient{do: func(_ context.Context, req pluginapi.HTTPRequest) (pluginapi.HTTPResponse, error) {
+				parsed, errParse := url.Parse(req.URL)
+				if errParse != nil {
+					return pluginapi.HTTPResponse{}, errParse
+				}
+				switch parsed.Path {
+				case "/v1/device/session":
+					return pluginapi.HTTPResponse{StatusCode: http.StatusOK, Body: []byte(`{"ticket":"ticket","expiresIn":900}`)}, nil
+				case "/v1/messages":
+					var payload map[string]any
+					_ = json.Unmarshal(req.Body, &payload)
+					// A non-streaming OpenAI client still needs the upstream Messages
+					// turn streamed, because the non-stream response translator
+					// consumes SSE events.
+					if payload["stream"] != true {
+						t.Errorf("upstream stream = %#v", payload["stream"])
+					}
+					if payload["model"] != model {
+						t.Errorf("upstream model = %#v", payload["model"])
+					}
+					body := "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"model\":\"" + model + "\"}}\n\n" +
+						"data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"hello world\"}}\n\n" +
+						"data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":2}}\n\n"
+					return pluginapi.HTTPResponse{StatusCode: http.StatusOK, Body: []byte(body)}, nil
+				default:
+					return pluginapi.HTTPResponse{}, fmt.Errorf("unexpected path %s", parsed.Path)
+				}
+			}}
+			payload := []byte(`{"model":"` + model + `","messages":[{"role":"user","content":"hi"}],"stream":false}`)
+			response, errExecute := New(pluginconfig.Defaults(), mirasim.NewPool()).Execute(context.Background(), pluginapi.ExecutorRequest{
+				Model:           model,
+				Format:          sdktranslator.FormatOpenAI.String(),
+				SourceFormat:    sdktranslator.FormatOpenAI.String(),
+				OriginalRequest: payload,
+				Payload:         payload,
+				StorageJSON:     storage.JSON(),
+				HTTPClient:      host,
+			})
+			if errExecute != nil {
+				t.Fatalf("Execute() error = %v", errExecute)
+			}
+			if content := gjson.GetBytes(response.Payload, "choices.0.message.content").String(); content != "hello world" {
+				t.Fatalf("content = %q; payload = %s", content, response.Payload)
+			}
+			if response.Headers.Get("Content-Type") != "application/json" {
+				t.Fatalf("headers = %#v", response.Headers)
+			}
+		})
+	}
+}
+
 func executorTestStorage(t *testing.T) credentials.Storage {
 	t.Helper()
 	_, privateKey, errKey := ed25519.GenerateKey(rand.Reader)
