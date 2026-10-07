@@ -100,11 +100,13 @@ docker exec -it <容器名> ./CLIProxyAPI -config <配置文件> --mirasim-login
 
 ## 使用
 
-模型列表来自该账号的目录。目录请求失败时，沿用这个凭证上次成功的列表；没有缓存时使用插件自带的默认列表，成员只是临时的，目录恢复后会换成账号实际返回的结果。列表里有某个模型，也不表示当前还有额度。
+模型列表来自该账号的目录。目录请求失败时，沿用这个凭证上次成功的列表；没有缓存时使用插件自带的默认列表，成员只是临时的，目录恢复后会换成账号实际返回的结果。官方模型配置中的下架名单会过滤这些列表及其别名。列表里有某个模型，也不表示当前还有额度。
 
-思考力度写在模型名后，例如 `claude-sonnet-5(high)`。Claude 和 GPT 接受 `low`、`medium`、`high`、`xhigh`、`max`、`ultra`。`ultra` 按 `max` 发送，这里不会执行官方客户端的多轮编排，因此它和 `max` 是同一次请求。DeepSeek 另接受 `off`。GLM 和 Kimi 接受 `low`、`high`、`max`，Gemini 接受 `low`、`medium`、`high`。不支持的力度返回 HTTP 400。
+思考力度写在模型名后，例如 `claude-sonnet-5-5(high)`。Claude 和 GPT 接受 `low`、`medium`、`high`、`xhigh`、`max`、`ultra`。`ultra` 按 `max` 发送，这里不会执行官方客户端的多轮编排，因此它和 `max` 是同一次请求。DeepSeek 另接受 `off`。GLM 和 Kimi 接受 `low`、`high`、`max`。不支持的力度返回 HTTP 400。
 
-已知上下文至少 100 万 token 的 Claude 还可以加 `[1m]`，例如 `claude-sonnet-5[1m](high)`。转发前会去掉这两个后缀，真实模型名不变。
+Gemini 3.1 Pro 使用 `gemini-3.1-pro-preview`，通过 Mirasim 的 Messages 接口调用，也接受 CPA 的 OpenAI Chat、Responses 和 Gemini 请求格式。思考档位提供 `off`、`minimal`、`low`、`medium`、`high`，按官方集成使用 token 预算；已有的原生 Messages 预算会保留。
+
+已知上下文至少 100 万 token 的 Claude 还可以加 `[1m]`，例如 `claude-sonnet-5-5[1m](high)`。转发前会去掉这两个后缀，真实模型名不变。
 
 账号目录含有 GPT 时，CPA 还会列出 `gpt-image-*`。这些是路由别名，账号能否生图由中继决定。`/v1/images/generations` 和 `/v1/images/edits` 会转到 Mirasim，也包括 Codex 的 `/backend-api/codex/images/*`。Codex 压缩请求走 `/v1/responses/compact`，别名是 `/backend-api/codex/responses/compact`。
 
@@ -120,6 +122,10 @@ Mirasim 用重置卡清空已经用完的窗口。标准额度页的「重置」
 
 页面不缓存。刷新会再次查询每个 Mirasim 凭证的额度。这些请求不计费，也不会触发推理。
 
+同一页面提供「一键测试所有模型」：点击后读取各账户当前发布的模型列表，逐个发送一次最简请求，显示可用性、HTTP 状态、耗时及响应或错误摘要。对话模型发送 `Reply with OK.`，图像模型请求生成一张简单图片。`[1m]` 和 Kimi 等指向同一上游模型的别名合并测试，停用账户会跳过。同一轮中的重复请求返回已有结果，不重复调用模型。
+
+测试会消耗账户额度；打开或刷新页面不会自动测试。「停止后续测试」会等待当前请求结束，再跳过剩余模型。空响应会单独标记，不直接当作可用；限流或配额错误会显示其 HTTP 状态及说明。结果反映本次请求，刷新页面后清空。
+
 管理接口需要管理密钥。`auth_index` 是 CPA 运行时的凭证序号：
 
 ```text
@@ -131,7 +137,7 @@ GET  /v0/management/mirasim/quota?auth_index=<序号>
 
 `POST /v0/management/quota/reset` 由 CPA 提供并转给插件。两条标准路由都只带凭证、不带参数，因此不能指定兑换哪张卡；要逐张挑选得等插件自己的重置路由。最后一条留给仍在使用旧额度卡片的面板，返回原来的 `quota.windows`。
 
-额度页地址里有一段随机路径，插件重载后才会变。谁拿到这个地址，谁就能在重载前查看额度。它会出现在 CPA 日志和浏览器历史里。页面不显示 token、邮箱、设备密钥或凭证序号。
+额度页地址里有一段随机路径，插件重载后才会变。谁拿到这个地址，谁就能在重载前查看额度并从页面发起模型测试。它会出现在 CPA 日志和浏览器历史里。测试接口还要求页面提供的请求头及独立测试票据，直接导航或预加载测试链接不会触发推理。页面不显示 token、邮箱、设备密钥或凭证序号。
 
 关掉 CPA 自带面板、又把管理中心放到另一个域名时，浏览器会拦住这个 iframe。
 

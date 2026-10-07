@@ -22,6 +22,21 @@ func TestParseRosterDropsPaidVariants(t *testing.T) {
 	}
 }
 
+func TestRosterRetainsWithdrawalsWithoutModelEntries(t *testing.T) {
+	roster, err := parseRoster([]byte(`{"version":"withdrawals","withdrawn":[" CLAUDE-SONNET-5 ","claude-sonnet-5",12,null,"","claude-fable-5"]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(roster.Withdrawn) != 2 || roster.Withdrawn[0] != "claude-sonnet-5" || roster.Withdrawn[1] != "claude-fable-5" {
+		t.Fatalf("withdrawals=%v", roster.Withdrawn)
+	}
+	clone := roster.Clone()
+	clone.Withdrawn[0] = "mutated"
+	if roster.Withdrawn[0] != "claude-sonnet-5" {
+		t.Fatal("withdrawal cache leaked through clone")
+	}
+}
+
 func TestParseRosterMergesTopLevelModelsAndNewAgents(t *testing.T) {
 	roster, err := parseRoster([]byte(`{"version":"v3","agents":{"claude":[{"id":"claude-sonnet-5","contextWindow":1000000,"label":"Agent Sonnet"}],"dsh":[{"id":"deepseek-flash","contextWindow":1000000,"effort":["off","high"]}],"kimi":[{"id":"kimi-code/k3","contextWindow":1048576}]},"models":{"claude-sonnet-5":{"label":"Model Sonnet","maxOutput":64000,"effort":["low","high"],"adaptive":true},"deepseek-flash":{"maxOutput":384000},"glm-5.3-flash":{"label":"GLM Flash","contextWindow":900000,"effort":["low","high","max"]},"invalid":{"effort":[false,9]}}}`))
 	if err != nil {

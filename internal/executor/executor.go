@@ -353,21 +353,22 @@ func translateStream(ctx context.Context, from, to sdktranslator.Format, model s
 	output := make(chan pluginapi.ExecutorStreamChunk)
 	go func() {
 		defer close(output)
-		if from == to || to == "" {
+		passthrough := from == to || to == ""
+		if passthrough && from != sdktranslator.FormatClaude {
 			forwardStream(ctx, input, output)
 			return
 		}
 		registry := builtin.Registry()
-		if !registry.HasStreamResponseTransformer(to, from) {
+		if !passthrough && !registry.HasStreamResponseTransformer(to, from) {
 			sendChunk(ctx, output, pluginapi.ExecutorStreamChunk{Err: fmt.Errorf("Mirasim executor cannot translate stream %s -> %s", from, to)})
 			return
 		}
 		var pending []byte
 		var state any
 		var terminal, streamFailed bool
-		translateLine := func(line []byte) bool {
-			line = bytes.TrimSuffix(line, []byte("\r"))
-			if streamFailed || len(bytes.TrimSpace(line)) == 0 {
+		translateLine := func(raw []byte) bool {
+			line := bytes.TrimRight(raw, "\r\n")
+			if streamFailed || !passthrough && len(bytes.TrimSpace(line)) == 0 {
 				return true
 			}
 			if from == sdktranslator.FormatCodex {
@@ -379,6 +380,20 @@ func translateStream(ctx context.Context, from, to sdktranslator.Format, model s
 					streamFailed = true
 					return sendChunk(ctx, output, pluginapi.ExecutorStreamChunk{Err: errEvent})
 				}
+			}
+			if from == sdktranslator.FormatClaude {
+				ended, errEvent := messagesStreamEvent(line)
+				terminal = terminal || ended
+				// CPA observes failures through Err; a translator can otherwise
+				// discard an upstream error or turn it into an ordinary payload.
+				// Native Messages clients already understand the original event.
+				if errEvent != nil && !passthrough {
+					streamFailed = true
+					return sendChunk(ctx, output, pluginapi.ExecutorStreamChunk{Err: errEvent})
+				}
+			}
+			if passthrough {
+				return sendChunk(ctx, output, pluginapi.ExecutorStreamChunk{Payload: append([]byte(nil), raw...)})
 			}
 			frames := registry.TranslateStream(ctx, from, to, model, originalRequest, translatedRequest, append([]byte(nil), line...), &state)
 			for _, frame := range frames {
@@ -400,8 +415,13 @@ func translateStream(ctx context.Context, from, to sdktranslator.Format, model s
 					if len(pending) > 0 && !translateLine(pending) {
 						return
 					}
-					if from == sdktranslator.FormatCodex && !terminal && !streamFailed {
-						sendChunk(ctx, output, pluginapi.ExecutorStreamChunk{Err: fmt.Errorf("Mirasim Codex stream ended before response.completed")})
+					if !terminal && !streamFailed && ctx.Err() == nil {
+						switch from {
+						case sdktranslator.FormatCodex:
+							sendChunk(ctx, output, pluginapi.ExecutorStreamChunk{Err: fmt.Errorf("Mirasim Codex stream ended before response.completed")})
+						case sdktranslator.FormatClaude:
+							sendChunk(ctx, output, pluginapi.ExecutorStreamChunk{Err: fmt.Errorf("Mirasim Messages stream ended before message_stop")})
+						}
 					}
 					return
 				}
@@ -427,7 +447,7 @@ func translateStream(ctx context.Context, from, to sdktranslator.Format, model s
 					if index < 0 {
 						break
 					}
-					line := append([]byte(nil), pending[:index]...)
+					line := append([]byte(nil), pending[:index+1]...)
 					pending = pending[index+1:]
 					if !translateLine(line) {
 						return

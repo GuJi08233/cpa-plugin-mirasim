@@ -183,6 +183,7 @@ func ApplyForWire(body []byte, model, wire string, config pluginapi.ThinkingConf
 func ApplyForWireWithShape(body []byte, model, wire string, config pluginapi.ThinkingConfig, shape ModelShape) ([]byte, error) {
 	body = NormalizeWorkflowRequest(validBody(body))
 	config = normalizeConfig(config)
+	shape = defaultModelShape(model, shape)
 	switch strings.ToLower(strings.TrimSpace(wire)) {
 	case wireClaude:
 		return applyClaude(body, model, config, shape)
@@ -205,6 +206,7 @@ func NormalizeForWire(body []byte, model, wire string, shape ModelShape) []byte 
 	if strings.ToLower(strings.TrimSpace(wire)) != wireClaude {
 		return body
 	}
+	shape = defaultModelShape(model, shape)
 	config, ok := claudeBodyConfig(validBody(body), shape)
 	if !ok {
 		return body
@@ -214,6 +216,15 @@ func NormalizeForWire(body []byte, model, wire string, shape ModelShape) []byte 
 		return body
 	}
 	return normalized
+}
+
+func defaultModelShape(model string, shape ModelShape) ModelShape {
+	// The official Gemini Messages integration uses manual thinking unless
+	// the roster explicitly selects adaptive. Preserve translated budgets.
+	if shape == ShapeUnknown && strings.HasPrefix(strings.ToLower(strings.TrimSpace(model)), "gemini-") {
+		return ShapeBudget
+	}
+	return shape
 }
 
 // claudeBodyConfig maps the controls already present in a Claude payload onto
@@ -290,7 +301,7 @@ func applyClaude(body []byte, model string, config pluginapi.ThinkingConfig, sha
 			body = deletePath(body, "thinking")
 			return setString(body, "output_config.effort", "off"), nil
 		}
-		if strings.HasPrefix(model, "glm-") || strings.HasPrefix(model, "kimi-") || strings.HasPrefix(model, "gemini-") {
+		if strings.HasPrefix(model, "glm-") || strings.HasPrefix(model, "kimi-") {
 			return body, &ConfigError{Code: "mirasim_effort_invalid", Message: fmt.Sprintf("%s does not offer an off effort", model)}
 		}
 		body = setString(body, "thinking.type", "disabled")
@@ -304,6 +315,16 @@ func applyClaude(body []byte, model string, config pluginapi.ThinkingConfig, sha
 		}
 		return applyManualClaude(body, 1024)
 	case "level":
+		if strings.HasPrefix(model, "gemini-") {
+			switch config.Level {
+			case "off":
+				return applyClaude(body, model, pluginapi.ThinkingConfig{Mode: "none"}, shape)
+			case "minimal":
+				if !adaptive {
+					return applyManualClaude(body, 1024)
+				}
+			}
+		}
 		if adaptive {
 			if config.Level == "off" && strings.HasPrefix(model, "deepseek-") {
 				body = deletePath(body, "thinking")

@@ -138,25 +138,6 @@ func TestDeepSeekOffKeepsItsOwnEffort(t *testing.T) {
 	}
 }
 
-func TestGeminiEffortLadder(t *testing.T) {
-	body := []byte(`{"model":"gemini-3.1-pro-preview","max_tokens":4096,"messages":[]}`)
-	for _, effort := range []string{"low", "medium", "high"} {
-		out, errApply := ApplyForWire(body, "gemini-3.1-pro-preview", wireClaude, pluginapi.ThinkingConfig{Mode: "level", Level: effort})
-		if errApply != nil || gjson.GetBytes(out, "thinking.type").String() != "adaptive" || gjson.GetBytes(out, "output_config.effort").String() != effort {
-			t.Fatalf("effort %q body = %s, error = %v", effort, out, errApply)
-		}
-	}
-	// Gemini takes the effort form but not max or off.
-	for _, invalid := range []string{"max", "off"} {
-		if _, errApply := ApplyForWire(body, "gemini-3.1-pro-preview", wireClaude, pluginapi.ThinkingConfig{Mode: "level", Level: invalid}); errApply == nil {
-			t.Fatalf("gemini accepted unsupported effort %q", invalid)
-		}
-	}
-	if _, errNone := ApplyForWire(body, "gemini-3.1-pro-preview", wireClaude, pluginapi.ThinkingConfig{Mode: "none"}); errNone == nil {
-		t.Fatal("gemini unexpectedly accepted a disabled thinking mode")
-	}
-}
-
 func TestApplyForWireUsesAdaptiveClaudeControls(t *testing.T) {
 	body := []byte(`{"model":"claude-sonnet-5","max_tokens":4096,"messages":[],"output_config":{"effort":"low","format":{"type":"json_schema"}}}`)
 	auto, errAuto := ApplyForWire(body, "claude-sonnet-5", wireClaude, pluginapi.ThinkingConfig{Mode: "auto", Budget: -1})

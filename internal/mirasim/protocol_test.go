@@ -110,6 +110,14 @@ func TestRelayAgentRecognizesCodexRoutes(t *testing.T) {
 	}
 }
 
+func TestGeminiMessagesUseOfficialPiAgent(t *testing.T) {
+	for _, path := range []string{"/v1/messages", "/v1/messages/count_tokens"} {
+		if got := relayAgentForRequest(path, []byte(`{"model":"gemini-3.1-pro-preview"}`)); got != "pi" {
+			t.Fatalf("Gemini agent for %s = %q, want pi", path, got)
+		}
+	}
+}
+
 func TestRelayAgentMatchesOfficialBuiltinModelFamilies(t *testing.T) {
 	for model, want := range map[string]string{
 		"claude-sonnet-5": "claude",

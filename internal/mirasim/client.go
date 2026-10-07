@@ -899,14 +899,15 @@ func parseCatalogEntry(item json.RawMessage) (RemoteModel, bool) {
 }
 
 // servableModels keeps the entries the account can actually address, the same
-// way the official client narrows the same response. A reserved placeholder and
-// a namespaced ID name no model, and a dated twin such as
+// way the official client narrows the same response. Reserved placeholders and
+// third-party namespaces name no relay model. kimi-code/ is Mirasim's own Kimi
+// model namespace and must remain addressable. A dated twin such as
 // claude-haiku-4-5-20251001 is dropped when the plain ID it duplicates is
 // served beside it, so a caller is not offered the same model twice.
 func servableModels(parsed []RemoteModel) []RemoteModel {
 	undated := make(map[string]struct{}, len(parsed))
 	for _, model := range parsed {
-		if !strings.Contains(model.ID, "/") && !datedModelSuffix.MatchString(model.ID) {
+		if !foreignModelNamespace(model.ID) && !datedModelSuffix.MatchString(model.ID) {
 			undated[model.ID] = struct{}{}
 		}
 	}
@@ -916,7 +917,7 @@ func servableModels(parsed []RemoteModel) []RemoteModel {
 		if _, duplicate := seen[model.ID]; duplicate {
 			continue
 		}
-		if _, reserved := reservedCatalogIDs[model.ID]; reserved || strings.Contains(model.ID, "/") {
+		if _, reserved := reservedCatalogIDs[model.ID]; reserved || foreignModelNamespace(model.ID) {
 			continue
 		}
 		if datedModelSuffix.MatchString(model.ID) {
@@ -928,6 +929,10 @@ func servableModels(parsed []RemoteModel) []RemoteModel {
 		models = append(models, model)
 	}
 	return models
+}
+
+func foreignModelNamespace(id string) bool {
+	return strings.Contains(id, "/") && !strings.HasPrefix(strings.ToLower(id), "kimi-code/")
 }
 
 type QuotaSnapshot struct {
