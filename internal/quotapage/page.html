@@ -1,0 +1,69 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{font:16px system-ui,sans-serif;max-width:66rem;margin:3rem auto;padding:0 1.25rem;color:#171717}h1{font-size:1.6rem;margin:0 0 .25rem}h1 span{color:#777;font-size:1rem;font-weight:400}h2{font-size:1.15rem;margin:2rem 0 .5rem}h3{font-size:1rem;margin:1rem 0 .35rem}p{color:#555;margin:.35rem 0}.table-scroll{overflow-x:auto}table{width:100%;min-width:44rem;border-collapse:collapse;margin:.25rem 0 1rem}th,td{text-align:left;padding:.4rem .5rem;border-bottom:1px solid #e5e5e5;vertical-align:top}th{font-weight:600;color:#333}.reset-countdown{white-space:nowrap}.unavailable,.problem{color:#a33}.read-at{color:#777;font-size:.85rem}</style>
+<style>
+.model-tests{margin:1.5rem 0;padding:1.25rem;border:1px solid #d9e1e9;border-radius:12px;background:#f8fafc}.model-tests h2{margin:0 0 .4rem}.test-actions{display:flex;gap:.65rem;align-items:center;flex-wrap:wrap;margin:.9rem 0}button{font:inherit;padding:.5rem .85rem;border:1px solid #cbd5e1;border-radius:7px;background:white;cursor:pointer}button.primary{background:#0f5669;color:white;border-color:#0f5669}button:disabled{cursor:default;opacity:.5}.test-summary{font-size:.9rem;color:#475569}.model-tests td:first-child{white-space:nowrap}.model-name{font-family:ui-monospace,monospace;font-size:.85rem;overflow-wrap:anywhere}.aliases{font-size:.75rem;color:#64748b;margin-top:.3rem}.test-badge{display:inline-block;white-space:nowrap;border-radius:20px;padding:.18rem .5rem;background:#e2e8f0;font-size:.8rem}.test-badge[data-state="available"]{background:#dcfce7;color:#166534}.test-badge[data-state="unavailable"]{background:#fee2e2;color:#991b1b}.test-badge[data-state="empty"]{background:#fef3c7;color:#92400e}.test-badge[data-state="running"]{background:#dbeafe;color:#1e40af}.response-preview{max-width:25rem;white-space:pre-wrap;overflow-wrap:anywhere;font-size:.85rem}details pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:16rem;overflow:auto;font-size:.8rem}.probe-time{font-variant-numeric:tabular-nums;white-space:nowrap}.model-tests table{margin-bottom:0}.model-tests [hidden]{display:none}.probe-help{font-size:.85rem;line-height:1.5}
+@media(prefers-color-scheme:dark){body{color:#e2e8f0;background:#12171d}p,th{color:#b9c6d3}th,td{border-color:#334155}.model-tests{background:#18212b;border-color:#334155}button{background:#243140;color:#e2e8f0;border-color:#475569}.test-summary,.aliases{color:#a7b5c5}.unavailable,.problem{color:#fca5a5}}
+</style>
+<title>Mirasim 配额 / Mirasim quota</title></head><body>
+<h1>Mirasim 配额 <span>Mirasim quota</span></h1>
+<p class="read-at">读取时间 / Read at {{.ReadAt}}</p>
+{{if .Problem}}<p class="problem">{{.Problem}}</p>{{end}}
+{{if .Empty}}<p>{{emptyAccounts}}</p>{{end}}
+{{if .ProbeToken}}<section class="model-tests" id="model-tests" data-token="{{.ProbeToken}}">
+<h2>模型可用性 <span>Model availability</span></h2>
+<p class="probe-help">点击后按账户逐一测试：对话模型发送「Reply with OK.」，图像模型生成一张简单图片。同一模型的别名合并测试，每轮每个模型只请求一次，不自动重试。测试会消耗账户额度。</p>
+<div class="test-actions"><button class="primary" id="probe-start" type="button">一键测试所有模型</button><button id="probe-stop" type="button" disabled>停止后续测试</button><span class="test-summary" id="probe-summary" role="status" aria-live="polite">尚未测试</span></div>
+<p class="probe-help">结果只反映本次请求；限流、配额不足和空响应会单独显示。测试后可刷新页面查看最新配额。</p>
+<div class="table-scroll" id="probe-table" hidden><table><thead><tr><th>账户</th><th>模型</th><th>状态</th><th>耗时</th><th>响应 / 错误</th></tr></thead><tbody id="probe-rows"></tbody></table></div>
+</section>{{end}}
+{{range .Accounts}}<section>
+<h2>账户 {{.Number}} <span>Account {{.Number}}</span></h2>
+{{if .Plan}}<p>套餐 / Plan: {{.Plan}}</p>{{end}}
+{{if .Tier}}<p>层级 / Tier: {{.Tier}}</p>{{end}}
+{{if .Unavailable}}<p class="unavailable">{{unavailableAccount}}</p>{{end}}
+{{if .Empty}}<p>{{emptyAccount}}</p>{{end}}
+{{range .Groups}}<h3>{{.DisplayName}}</h3>
+<div class="table-scroll"><table><thead><tr><th>窗口 / Window</th><th>剩余 / Remaining</th><th>重置 / Reset</th><th>距重置 / Until reset</th><th>说明 / Details</th></tr></thead><tbody>
+{{range .Buckets}}<tr><td>{{.Window}}</td><td>{{.Remaining}}</td><td>{{if .ResetAt}}<time datetime="{{.ResetAt}}">{{.Reset}}</time>{{else}}{{.Reset}}{{end}}</td><td class="reset-countdown" data-countdown>—</td><td>{{.Description}}</td></tr>{{end}}
+</tbody></table></div>{{end}}
+</section>{{end}}
+<p class="read-at">限额读取自 GET /v1/limits；此页面不显示任何凭据。 / Limits are read from GET /v1/limits; this page never shows a credential.</p>
+<script nonce="{{.ScriptNonce}}">
+(() => {
+  const resets = Array.from(document.querySelectorAll('time[datetime]'), time => ({
+    time,
+    at: Date.parse(time.dateTime),
+    countdown: time.closest('tr').querySelector('[data-countdown]')
+  })).filter(entry => Number.isFinite(entry.at) && entry.countdown);
+  if (resets.length === 0) return;
+
+  const twoDigits = value => String(value).padStart(2, '0');
+  function update() {
+    const now = Date.now();
+    // Recreate the formatter so a changed browser time zone is reflected too.
+    const localTime = new Intl.DateTimeFormat(undefined, {
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hourCycle: 'h23', timeZoneName: 'short'
+    });
+    for (const entry of resets) {
+      entry.time.textContent = localTime.format(new Date(entry.at));
+      const seconds = Math.max(0, Math.ceil((entry.at - now) / 1000));
+      if (seconds === 0) {
+        entry.countdown.textContent = '已到时间 / Due';
+        continue;
+      }
+      const days = Math.floor(seconds / 86400);
+      const hours = Math.floor((seconds % 86400) / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      const remainder = seconds % 60;
+      entry.countdown.textContent = (days ? days + 'd ' : '') +
+        twoDigits(hours) + ':' + twoDigits(minutes) + ':' + twoDigits(remainder);
+    }
+  }
+  update();
+  setInterval(update, 1000);
+})();
+</script>
+{{if .ProbeToken}}<script nonce="{{.ScriptNonce}}">{{probeScript}}</script>{{end}}
+</body></html>

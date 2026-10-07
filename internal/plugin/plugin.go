@@ -37,13 +37,15 @@ func Build(configYAML []byte) pluginapi.Plugin {
 	})
 	authProvider := auth.New(settings, pool)
 	quotaProvider := quota.New(settings, pool)
+	modelProvider := models.New(settings, pool)
+	executorProvider := executor.New(settings, pool)
 	p := &MirasimPlugin{
 		auth:        authProvider,
-		models:      models.New(settings, pool),
-		executor:    executor.New(settings, pool),
+		models:      modelProvider,
+		executor:    executorProvider,
 		thinking:    thinkingpkg.NewApplier(),
 		quota:       quotaProvider,
-		quotaPage:   quotapage.New(quotaProvider),
+		quotaPage:   quotapage.New(quotaProvider, quotapage.ProbeServices{Models: modelProvider, Executor: executorProvider}),
 		legacyQuota: legacyquota.New(settings, pool),
 	}
 	return pluginapi.Plugin{

@@ -853,6 +853,13 @@ func TestParseModelCatalogOffersEachServableModelOnce(t *testing.T) {
 	}
 }
 
+func TestParseModelCatalogKeepsNativeKimiNamespace(t *testing.T) {
+	models, err := ParseModelCatalog([]byte(`{"data":[{"id":"kimi-code/k3"},{"id":"openrouter/kimi-code/k3"}]}`))
+	if err != nil || len(models) != 1 || models[0].ID != "kimi-code/k3" {
+		t.Fatalf("Kimi catalog=%+v err=%v", models, err)
+	}
+}
+
 func TestPrepareHeadersDropsClientCredentials(t *testing.T) {
 	auth := http.Header{"Authorization": []string{"Bearer ticket"}, "X-Mirasim-Enc": []string{"sealed"}}
 	headers := prepareHeaders(http.Header{
