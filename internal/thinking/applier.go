@@ -295,15 +295,19 @@ func normalizeConfig(config pluginapi.ThinkingConfig) pluginapi.ThinkingConfig {
 func applyClaude(body []byte, model string, config pluginapi.ThinkingConfig, shape ModelShape) ([]byte, error) {
 	model = strings.ToLower(strings.TrimSpace(model))
 	adaptive := adaptiveClaude(shape)
+	// DeepSeek, GLM and Kimi publish no off rung. A caller asking to think less
+	// than low gets the closest thing the model offers rather than a rejection:
+	// low still reasons, but it is the smallest amount the relay accepts.
+	if floor := effortFloor(model); floor != "" {
+		switch {
+		case config.Mode == "none":
+			config = pluginapi.ThinkingConfig{Mode: "level", Level: floor}
+		case config.Mode == "level" && config.Level == "off":
+			config.Level = floor
+		}
+	}
 	switch config.Mode {
 	case "none":
-		if strings.HasPrefix(model, "deepseek-") {
-			body = deletePath(body, "thinking")
-			return setString(body, "output_config.effort", "off"), nil
-		}
-		if strings.HasPrefix(model, "glm-") || strings.HasPrefix(model, "kimi-") {
-			return body, &ConfigError{Code: "mirasim_effort_invalid", Message: fmt.Sprintf("%s does not offer an off effort", model)}
-		}
 		body = setString(body, "thinking.type", "disabled")
 		body = deletePath(body, "thinking.budget_tokens")
 		return deleteClaudeEffort(body), nil
@@ -326,10 +330,6 @@ func applyClaude(body []byte, model string, config pluginapi.ThinkingConfig, sha
 			}
 		}
 		if adaptive {
-			if config.Level == "off" && strings.HasPrefix(model, "deepseek-") {
-				body = deletePath(body, "thinking")
-				return setString(body, "output_config.effort", "off"), nil
-			}
 			if !modelAcceptsEffort(model, config.Level) {
 				return body, &ConfigError{
 					Code:    "mirasim_claude_effort_invalid",
@@ -360,12 +360,22 @@ func applyClaude(body []byte, model string, config pluginapi.ThinkingConfig, sha
 
 func modelAcceptsEffort(model, level string) bool {
 	switch {
-	case strings.HasPrefix(model, "deepseek-"):
-		return level == "low" || level == "high" || level == "max"
-	case strings.HasPrefix(model, "glm-"), strings.HasPrefix(model, "kimi-"):
+	case strings.HasPrefix(model, "glm-"), strings.HasPrefix(model, "kimi-"), strings.HasPrefix(model, "deepseek-"):
 		return level == "low" || level == "high" || level == "max"
 	default:
 		return isRelayEffort(level)
+	}
+}
+
+// effortFloor names the smallest effort a model offers, or "" for a model that
+// can turn thinking off entirely. DeepSeek, GLM and Kimi publish no off rung,
+// so requests below low land on low instead of being refused.
+func effortFloor(model string) string {
+	switch {
+	case strings.HasPrefix(model, "deepseek-"), strings.HasPrefix(model, "glm-"), strings.HasPrefix(model, "kimi-"):
+		return "low"
+	default:
+		return ""
 	}
 }
 

@@ -38,7 +38,7 @@ func TestRosterKeepsBuiltinRelayEfforts(t *testing.T) {
 		case "/v1/model-roster":
 			// The official 0.0.426 roster omits adaptive on these agent entries.
 			return pluginapi.HTTPResponse{StatusCode: 200, Body: []byte(`{"version":"parity-426","agents":{
-				"dsh":[{"id":"deepseek-flash","contextWindow":1000000,"effort":["off","low","high","max"]}],
+				"dsh":[{"id":"deepseek-flash","contextWindow":1000000,"effort":["low","high","max"]}],
 				"kimi":[{"id":"kimi-code/k3","contextWindow":1048576,"effort":["low","high","max"]}],
 				"zcode":[{"id":"glm-5.3-flash","contextWindow":1000000,"effort":["low","high","max"]}]
 			}}`)}, nil
@@ -51,9 +51,6 @@ func TestRosterKeepsBuiltinRelayEfforts(t *testing.T) {
 	}
 	for _, model := range []string{"deepseek-flash", "kimi-code/k3", "kimi-k3", "glm-5.3-flash"} {
 		levels := []string{"low", "high", "max"}
-		if model == "deepseek-flash" {
-			levels = append(levels, "off")
-		}
 		for _, effort := range levels {
 			for _, suffix := range []bool{false, true} {
 				t.Run(fmt.Sprintf("%s/%s/suffix=%t", model, effort, suffix), func(t *testing.T) {
@@ -70,9 +67,6 @@ func TestRosterKeepsBuiltinRelayEfforts(t *testing.T) {
 					}
 					if got := gjson.GetBytes(body, "output_config.effort").String(); got != effort || gjson.GetBytes(body, "thinking.budget_tokens").Exists() {
 						t.Fatalf("roster changed the requested effort: %s", body)
-					}
-					if effort == "off" && gjson.GetBytes(body, "thinking").Exists() {
-						t.Fatalf("off still enables thinking: %s", body)
 					}
 				})
 			}

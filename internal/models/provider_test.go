@@ -331,7 +331,7 @@ func TestFallbackCatalogCoversOfficialBuiltinFamilies(t *testing.T) {
 	if opus.Created != 1770318000 || opus.ContextLength != 1000000 || opus.MaxCompletionTokens != 128000 || opus.Thinking == nil || opus.Thinking.Min != 0 || opus.Thinking.Max != 0 || !opus.Thinking.DynamicAllowed {
 		t.Fatalf("Claude Opus 4.6 metadata = %#v", opus)
 	}
-	if deepseek := byID["deepseek-flash"]; deepseek.Type != "deepseek" || deepseek.ContextLength != 1000000 || deepseek.MaxCompletionTokens != 384000 || deepseek.Thinking == nil || deepseek.Thinking.Levels[0] != "off" {
+	if deepseek := byID["deepseek-flash"]; deepseek.Type != "deepseek" || deepseek.ContextLength != 1000000 || deepseek.MaxCompletionTokens != 384000 || deepseek.Thinking == nil || deepseek.Thinking.ZeroAllowed || deepseek.Thinking.Levels[0] != "low" {
 		t.Fatalf("DeepSeek metadata = %#v", deepseek)
 	}
 	if glm := byID["glm-5.3-flash"]; glm.Type != "glm" || glm.ContextLength != 1000000 || glm.MaxCompletionTokens != 0 {

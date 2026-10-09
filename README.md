@@ -46,7 +46,7 @@ plugins:
 | `locale` | 空 | 可选，如 `zh-CN`。 |
 | `relay-url` | `https://relay.mirasim.ai` | 一般不用改。 |
 | `admin-url` | `https://auth.mirasim.ai` | 一般不用改。 |
-| `client-version` | `0.0.435` | 上报的客户端版本。旧凭证在下次保存或刷新时改成这项的值。 |
+| `client-version` | `0.0.449` | 上报的客户端版本。旧凭证在下次保存或刷新时改成这项的值。 |
 
 环境变量依次为 `MIRASIM_OAUTH_LOGIN_PROVIDER`、`MIRASIM_OAUTH_CALLBACK_PORT`、`MIRASIM_COLLECT`、`MIRASIM_LOCALE`、`MIRASIM_RELAY_URL`、`MIRASIM_ADMIN_URL`、`MIRASIM_CLIENT_VERSION`。
 
@@ -102,7 +102,7 @@ docker exec -it <容器名> ./CLIProxyAPI -config <配置文件> --mirasim-login
 
 模型列表来自该账号的目录。目录请求失败时，沿用这个凭证上次成功的列表；没有缓存时使用插件自带的默认列表，成员只是临时的，目录恢复后会换成账号实际返回的结果。官方模型配置中的下架名单会过滤这些列表及其别名。列表里有某个模型，也不表示当前还有额度。
 
-思考力度写在模型名后，例如 `claude-sonnet-5-5(high)`。Claude 和 GPT 接受 `low`、`medium`、`high`、`xhigh`、`max`、`ultra`。`ultra` 按 `max` 发送，这里不会执行官方客户端的多轮编排，因此它和 `max` 是同一次请求。DeepSeek 另接受 `off`。GLM 和 Kimi 接受 `low`、`high`、`max`。不支持的力度返回 HTTP 400。
+思考力度写在模型名后，例如 `claude-sonnet-5-5(high)`。Claude 和 GPT 接受 `low`、`medium`、`high`、`xhigh`、`max`、`ultra`。`ultra` 按 `max` 发送，这里不会执行官方客户端的多轮编排，因此它和 `max` 是同一次请求。DeepSeek、GLM 和 Kimi 接受 `low`、`high`、`max`；它们没有关闭档位，传入 `off`、`none` 或原生请求里的关闭标记会按最低档 `low` 发送。其他不支持的力度返回 HTTP 400。
 
 Gemini 3.1 Pro 使用 `gemini-3.1-pro-preview`，通过 Mirasim 的 Messages 接口调用，也接受 CPA 的 OpenAI Chat、Responses 和 Gemini 请求格式。思考档位提供 `off`、`minimal`、`low`、`medium`、`high`，按官方集成使用 token 预算；已有的原生 Messages 预算会保留。
 

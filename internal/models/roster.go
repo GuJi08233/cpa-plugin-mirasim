@@ -1,6 +1,7 @@
 package models
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
@@ -65,6 +66,13 @@ func applyRoster(models []pluginapi.ModelInfo, roster mirasim.ModelRoster) {
 				m.Thinking = &pluginapi.ThinkingSupport{}
 			}
 			m.Thinking.Levels = levels
+			// A roster effort list that filters off out of these families also
+			// drops the off mode it used to turn thinking down with. Claude keeps
+			// zero: its disabled form does not come from the effort list.
+			switch m.Type {
+			case "deepseek", "glm", "kimi":
+				m.Thinking.ZeroAllowed = m.Thinking.ZeroAllowed && slices.Contains(levels, "off")
+			}
 			m.SupportedParameters = appendUnique(m.SupportedParameters, "thinking")
 		}
 	}
@@ -72,9 +80,7 @@ func applyRoster(models []pluginapi.ModelInfo, roster mirasim.ModelRoster) {
 
 func rosterEffortSupported(modelType, level string) bool {
 	switch modelType {
-	case "deepseek":
-		return level == "off" || level == "low" || level == "high" || level == "max"
-	case "glm", "kimi":
+	case "deepseek", "glm", "kimi":
 		return level == "low" || level == "high" || level == "max"
 	case "gemini":
 		return level == "off" || level == "minimal" || level == "low" || level == "medium" || level == "high"

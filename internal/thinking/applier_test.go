@@ -123,18 +123,20 @@ func TestSelectorAliasesForNamesThePublishedSelectors(t *testing.T) {
 	}
 }
 
-func TestDeepSeekOffKeepsItsOwnEffort(t *testing.T) {
+func TestMessagesFamiliesFloorTheOffEffortAtLow(t *testing.T) {
 	parsed := ParseModel("deepseek-flash(off)")
 	if parsed.ModelName != "deepseek-flash" || parsed.Config.Mode != "level" || parsed.Config.Level != "off" {
 		t.Fatalf("parsed model = %#v", parsed)
 	}
-	body, err := ApplyForWire([]byte(`{"model":"deepseek-flash","thinking":{"type":"adaptive"}}`), parsed.ModelName, wireClaude, parsed.Config)
-	if err != nil || gjson.GetBytes(body, "output_config.effort").String() != "off" || gjson.GetBytes(body, "thinking").Exists() {
-		t.Fatalf("DeepSeek off body = %s, error = %v", body, err)
-	}
-	_, err = ApplyForWire([]byte(`{}`), "claude-sonnet-5", wireClaude, parsed.Config)
-	if err == nil {
-		t.Fatal("Claude unexpectedly accepted the DeepSeek-only off effort")
+	for _, model := range []string{"deepseek-flash", "glm-5.3-flash", "kimi-k3"} {
+		body, err := ApplyForWire([]byte(`{"thinking":{"type":"adaptive"}}`), model, wireClaude, parsed.Config)
+		if err != nil || gjson.GetBytes(body, "output_config.effort").String() != "low" {
+			t.Fatalf("%s off body = %s, error = %v", model, body, err)
+		}
+		body, err = ApplyForWire([]byte(`{}`), model, wireClaude, pluginapi.ThinkingConfig{Mode: "none"})
+		if err != nil || gjson.GetBytes(body, "output_config.effort").String() != "low" {
+			t.Fatalf("%s none body = %s, error = %v", model, body, err)
+		}
 	}
 }
 
@@ -260,6 +262,16 @@ func TestNormalizeForWireRepairsCallerSuppliedClaudeThinking(t *testing.T) {
 	disabled := []byte(`{"model":"claude-sonnet-5","max_tokens":1024,"messages":[],"thinking":{"type":"disabled"}}`)
 	if got := NormalizeForWire(disabled, "claude-sonnet-5", wireClaude, ShapeAdaptive); gjson.GetBytes(got, "thinking.type").String() != "disabled" {
 		t.Fatalf("body = %s", got)
+	}
+
+	// A native payload asking to turn thinking off on a model without an off
+	// rung lands on the floor instead of passing disabled upstream.
+	for _, model := range []string{"deepseek-flash", "glm-5.3-flash", "kimi-k3"} {
+		off := []byte(`{"model":"` + model + `","max_tokens":1024,"messages":[],"thinking":{"type":"disabled"}}`)
+		got := NormalizeForWire(off, model, wireClaude, ShapeAdaptive)
+		if gjson.GetBytes(got, "output_config.effort").String() != "low" || gjson.GetBytes(got, "thinking.type").String() != "adaptive" {
+			t.Fatalf("%s disabled body = %s", model, got)
+		}
 	}
 }
 

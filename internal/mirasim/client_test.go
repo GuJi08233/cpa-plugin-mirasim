@@ -40,7 +40,7 @@ func TestCurrentDefaultClientVersionIsSignedOnControlRequests(t *testing.T) {
 	client := NewClient(storage)
 	host := fakeHostClient{do: func(_ context.Context, req pluginapi.HTTPRequest) (pluginapi.HTTPResponse, error) {
 		path := mustRequestPath(t, req.URL)
-		if req.Headers.Get(headerMirasimClient) != "0.0.435" {
+		if req.Headers.Get(headerMirasimClient) != "0.0.449" {
 			t.Errorf("signed client version = %q", req.Headers.Get(headerMirasimClient))
 		}
 		if path == sessionPath {

@@ -107,7 +107,7 @@ var modelDefinitions = map[string]modelDefinition{
 		methods:     []string{"messages", "countTokens"}, parameters: []string{"max_tokens", "stop_sequences", "tools", "tool_choice", "thinking", "output_config"},
 		thinking: adaptiveRelayThinking(), modelType: "claude", owner: "anthropic",
 	},
-	// Context windows come from the official 0.0.435 builtin agent catalog,
+	// Context windows come from the official 0.0.449 builtin agent catalog,
 	// the table used when the relay publishes none. Astra is 0x100590. GPT 6
 	// Sol, GPT 6 Luna and the GPT 5.6 models are 0xd4e40. The desktop
 	// model-picker list still shows the older 0.0.354 windows.
@@ -145,7 +145,7 @@ var modelDefinitions = map[string]modelDefinition{
 		displayName: "DeepSeek V4.1 Flash", context: 1000000, output: 384000,
 		description: "DeepSeek Flash via Mirasim",
 		methods:     []string{"messages", "countTokens"}, parameters: []string{"max_tokens", "stop_sequences", "tools", "tool_choice", "thinking", "output_config"},
-		thinking: &pluginapi.ThinkingSupport{ZeroAllowed: true, DynamicAllowed: true, Levels: []string{"off", "low", "high", "max"}}, modelType: "deepseek", owner: "deepseek",
+		thinking: &pluginapi.ThinkingSupport{DynamicAllowed: true, Levels: []string{"low", "high", "max"}}, modelType: "deepseek", owner: "deepseek",
 	},
 	"glm-5.3-flash": {
 		displayName: "GLM 5.3 Flash", context: 1000000,
