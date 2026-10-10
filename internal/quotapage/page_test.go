@@ -167,7 +167,7 @@ func TestPageRendersAccountAndModelGroupsWithoutCredentials(t *testing.T) {
 	}
 	body := string(resp.Body)
 	for _, want := range []string{
-		"账户 1", "Account 1", "Mirasim (operator@example.com)",
+		"账户 1", "Account 1", "Mirasim (operator&#64;example&#46;com)",
 		"pro", "paid",
 		"Account limits", "Model limits",
 		"5h", "42.5%", "2026-09-20 08:00 UTC", "datetime=\"2026-09-20T08:00:00Z\"", "57.5% used",
@@ -181,7 +181,7 @@ func TestPageRendersAccountAndModelGroupsWithoutCredentials(t *testing.T) {
 	// Nothing from the credential JSON may reach the browser, and the token
 	// endpoint's error text has no place on a page either.
 	for _, secret := range []string{
-		"access-secret", "refresh-secret", "device-secret",
+		"access-secret", "refresh-secret", "device-secret", "operator@example.com",
 		"access_token", "refresh_token", "device_private_key",
 	} {
 		if strings.Contains(body, secret) {
@@ -310,6 +310,19 @@ func TestAccountLabelFallsBackToTheAuthFileName(t *testing.T) {
 	}
 	if got := accountLabel(pluginapi.HostAuthFileEntry{}); got != "" {
 		t.Fatalf("label = %q, want empty without label or name", got)
+	}
+}
+
+// A label carrying an email address reaches the browser as character
+// references, so a proxy-side email obfuscator cannot rewrite every heading
+// into the same placeholder. Markup is still escaped before the references.
+func TestRenderAccountLabelBreaksTheAddressPattern(t *testing.T) {
+	rendered := string(renderAccountLabel(`Mirasim (a<b>@example.com)`))
+	if strings.Contains(rendered, "a<b>@example.com") {
+		t.Fatalf("label was not escaped: %q", rendered)
+	}
+	if !strings.Contains(rendered, "a&lt;b&gt;&#64;example&#46;com") {
+		t.Fatalf("label was not rendered as references: %q", rendered)
 	}
 }
 

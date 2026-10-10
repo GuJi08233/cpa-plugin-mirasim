@@ -137,7 +137,7 @@ type pageView struct {
 
 type accountView struct {
 	Number      int
-	Label       string
+	Label       template.HTML
 	Plan        string
 	Tier        string
 	Groups      []groupView
@@ -179,7 +179,7 @@ func (p *Page) buildView(ctx context.Context, host HostServices, client pluginap
 }
 
 func (p *Page) accountView(ctx context.Context, host HostServices, client pluginapi.HostHTTPClient, entry pluginapi.HostAuthFileEntry, number int) accountView {
-	account := accountView{Number: number, Label: accountLabel(entry)}
+	account := accountView{Number: number, Label: renderAccountLabel(accountLabel(entry))}
 	auth, errGet := host.GetAuth(ctx, entry.AuthIndex)
 	if errGet != nil || len(auth.JSON) == 0 {
 		account.Unavailable = true
@@ -241,6 +241,18 @@ func accountLabel(entry pluginapi.HostAuthFileEntry) string {
 		return label
 	}
 	return strings.TrimSpace(entry.Name)
+}
+
+// renderAccountLabel escapes a label for HTML and then rewrites every "@" and
+// "." as numeric character references. Browsers render those identically, but
+// the email-address obfuscation filter on some reverse proxies (Cloudflare
+// Scrape Shield) scans the response body for a literal address and rewrites it
+// into a placeholder, which would make every account heading read the same.
+func renderAccountLabel(label string) template.HTML {
+	escaped := template.HTMLEscapeString(label)
+	escaped = strings.ReplaceAll(escaped, "@", "&#64;")
+	escaped = strings.ReplaceAll(escaped, ".", "&#46;")
+	return template.HTML(escaped)
 }
 
 func valueOrDash(value string) string {
