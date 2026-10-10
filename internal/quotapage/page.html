@@ -17,7 +17,7 @@
 <div class="table-scroll" id="probe-table" hidden><table><thead><tr><th>账户</th><th>模型</th><th>状态</th><th>耗时</th><th>响应 / 错误</th></tr></thead><tbody id="probe-rows"></tbody></table></div>
 </section>{{end}}
 {{range .Accounts}}<section>
-<h2>账户 {{.Number}} <span>Account {{.Number}}</span></h2>
+<h2>账户 {{.Number}} <span>Account {{.Number}}</span>{{if .Label}} <span>· {{.Label}}</span>{{end}}</h2>
 {{if .Plan}}<p>套餐 / Plan: {{.Plan}}</p>{{end}}
 {{if .Tier}}<p>层级 / Tier: {{.Tier}}</p>{{end}}
 {{if .Unavailable}}<p class="unavailable">{{unavailableAccount}}</p>{{end}}

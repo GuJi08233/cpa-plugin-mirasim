@@ -137,6 +137,7 @@ type pageView struct {
 
 type accountView struct {
 	Number      int
+	Label       string
 	Plan        string
 	Tier        string
 	Groups      []groupView
@@ -178,7 +179,7 @@ func (p *Page) buildView(ctx context.Context, host HostServices, client pluginap
 }
 
 func (p *Page) accountView(ctx context.Context, host HostServices, client pluginapi.HostHTTPClient, entry pluginapi.HostAuthFileEntry, number int) accountView {
-	account := accountView{Number: number}
+	account := accountView{Number: number, Label: accountLabel(entry)}
 	auth, errGet := host.GetAuth(ctx, entry.AuthIndex)
 	if errGet != nil || len(auth.JSON) == 0 {
 		account.Unavailable = true
@@ -229,6 +230,17 @@ func (p *Page) accountView(ctx context.Context, host HostServices, client plugin
 func isMirasimAuth(entry pluginapi.HostAuthFileEntry) bool {
 	return strings.EqualFold(strings.TrimSpace(entry.Provider), credentials.Provider) ||
 		strings.EqualFold(strings.TrimSpace(entry.Type), credentials.Provider)
+}
+
+// accountLabel picks the credential name the operator already sees elsewhere
+// in the panel, so "Account 2" can be told apart from "Account 1" without
+// reading anything out of the credential JSON: an operator-set label first,
+// then the auth file name. Both are host metadata, not secrets.
+func accountLabel(entry pluginapi.HostAuthFileEntry) string {
+	if label := strings.TrimSpace(entry.Label); label != "" {
+		return label
+	}
+	return strings.TrimSpace(entry.Name)
 }
 
 func valueOrDash(value string) string {

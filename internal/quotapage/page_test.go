@@ -155,7 +155,7 @@ func TestPageRendersAccountAndModelGroupsWithoutCredentials(t *testing.T) {
 		},
 	}}
 	host := &fakeHost{
-		entries: []pluginapi.HostAuthFileEntry{{ID: "id-1", AuthIndex: "a1", Provider: "mirasim", Type: "mirasim"}},
+		entries: []pluginapi.HostAuthFileEntry{{ID: "id-1", AuthIndex: "a1", Provider: "mirasim", Type: "mirasim", Label: "Mirasim (operator@example.com)", Name: "mirasim-operator.json"}},
 		auths:   map[string]pluginapi.HostAuthGetResponse{"a1": {AuthIndex: "a1", JSON: []byte(authJSON)}},
 		client:  fakeHTTPClient{},
 	}
@@ -167,7 +167,7 @@ func TestPageRendersAccountAndModelGroupsWithoutCredentials(t *testing.T) {
 	}
 	body := string(resp.Body)
 	for _, want := range []string{
-		"账户 1", "Account 1",
+		"账户 1", "Account 1", "Mirasim (operator@example.com)",
 		"pro", "paid",
 		"Account limits", "Model limits",
 		"5h", "42.5%", "2026-09-20 08:00 UTC", "datetime=\"2026-09-20T08:00:00Z\"", "57.5% used",
@@ -181,7 +181,7 @@ func TestPageRendersAccountAndModelGroupsWithoutCredentials(t *testing.T) {
 	// Nothing from the credential JSON may reach the browser, and the token
 	// endpoint's error text has no place on a page either.
 	for _, secret := range []string{
-		"access-secret", "refresh-secret", "device-secret", "operator@example.com",
+		"access-secret", "refresh-secret", "device-secret",
 		"access_token", "refresh_token", "device_private_key",
 	} {
 		if strings.Contains(body, secret) {
@@ -295,6 +295,21 @@ func TestPageKeepsAnUnreadableCredentialAsUnavailable(t *testing.T) {
 	}
 	if len(fetcher.requests) != 2 {
 		t.Fatalf("fetcher calls = %d, want 2", len(fetcher.requests))
+	}
+}
+
+// The heading falls back from the operator-set label to the auth file name, so
+// an account is still recognizable when the host supplies no label.
+func TestAccountLabelFallsBackToTheAuthFileName(t *testing.T) {
+	entry := pluginapi.HostAuthFileEntry{Label: "  Work account  ", Name: "mirasim-a.json"}
+	if got := accountLabel(entry); got != "Work account" {
+		t.Fatalf("label = %q, want the trimmed operator label", got)
+	}
+	if got := accountLabel(pluginapi.HostAuthFileEntry{Name: "mirasim-b.json"}); got != "mirasim-b.json" {
+		t.Fatalf("label = %q, want the file name fallback", got)
+	}
+	if got := accountLabel(pluginapi.HostAuthFileEntry{}); got != "" {
+		t.Fatalf("label = %q, want empty without label or name", got)
 	}
 }
 
