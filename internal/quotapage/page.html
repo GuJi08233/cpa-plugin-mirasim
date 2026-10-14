@@ -20,6 +20,7 @@
 <h2>账户 {{.Number}} <span>Account {{.Number}}</span>{{if .Label}} <span>· {{.Label}}</span>{{end}}</h2>
 {{if .Plan}}<p>套餐 / Plan: {{.Plan}}</p>{{end}}
 {{if .Tier}}<p>层级 / Tier: {{.Tier}}</p>{{end}}
+{{if .PlanExpiryAt}}<p>套餐到期 / Plan expires: <time datetime="{{.PlanExpiryAt}}">{{.PlanExpiry}}</time>（<span data-countdown>—</span>）</p>{{end}}
 {{if .Unavailable}}<p class="unavailable">{{unavailableAccount}}</p>{{end}}
 {{if .Empty}}<p>{{emptyAccount}}</p>{{end}}
 {{range .Groups}}<h3>{{.DisplayName}}</h3>
@@ -33,7 +34,7 @@
   const resets = Array.from(document.querySelectorAll('time[datetime]'), time => ({
     time,
     at: Date.parse(time.dateTime),
-    countdown: time.closest('tr').querySelector('[data-countdown]')
+    countdown: (time.closest('tr') || time.parentElement).querySelector('[data-countdown]')
   })).filter(entry => Number.isFinite(entry.at) && entry.countdown);
   if (resets.length === 0) return;
 

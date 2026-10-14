@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
+	pluginconfig "github.com/router-for-me/CLIProxyAPIPlugins/mirasim/internal/config"
 	"github.com/router-for-me/CLIProxyAPIPlugins/mirasim/internal/credentials"
 )
 
@@ -136,13 +137,15 @@ type pageView struct {
 }
 
 type accountView struct {
-	Number      int
-	Label       template.HTML
-	Plan        string
-	Tier        string
-	Groups      []groupView
-	Unavailable bool
-	Empty       bool
+	Number       int
+	Label        template.HTML
+	Plan         string
+	Tier         string
+	PlanExpiry   string
+	PlanExpiryAt string
+	Groups       []groupView
+	Unavailable  bool
+	Empty        bool
 }
 
 type groupView struct {
@@ -184,6 +187,12 @@ func (p *Page) accountView(ctx context.Context, host HostServices, client plugin
 	if errGet != nil || len(auth.JSON) == 0 {
 		account.Unavailable = true
 		return account
+	}
+	// plan_exp comes from the token's plan claim and the profile refresh, both
+	// already saved in the credential file; the standard QuotaSubscription shape
+	// has no field for it, so the page reads it straight from storage.
+	if storage, errParse := credentials.Parse(auth.JSON, pluginconfig.Settings{}); errParse == nil && storage != nil && storage.PlanExpiresAt != nil {
+		account.PlanExpiry, account.PlanExpiryAt = formatReset(time.Unix(*storage.PlanExpiresAt, 0).UTC().Format(time.RFC3339))
 	}
 	response, errFetch := p.fetcher.FetchQuota(ctx, pluginapi.QuotaFetchRequest{
 		AuthIndex:   entry.AuthIndex,

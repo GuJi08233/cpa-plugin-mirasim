@@ -2,6 +2,10 @@ package quotapage
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"net/http"
 	"regexp"
@@ -9,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
+	"github.com/router-for-me/CLIProxyAPIPlugins/mirasim/internal/credentials"
 )
 
 const testBasePath = "/v0/resource/plugins/mirasim"
@@ -139,8 +144,23 @@ func TestOwnsMatchesOnlyItsOwnSegment(t *testing.T) {
 }
 
 func TestPageRendersAccountAndModelGroupsWithoutCredentials(t *testing.T) {
-	const authJSON = `{"type":"mirasim","access_token":"access-secret","refresh_token":"refresh-secret",` +
-		`"device_private_key":"device-secret","email":"operator@example.com"}`
+	_, deviceKey, errKey := ed25519.GenerateKey(rand.Reader)
+	if errKey != nil {
+		t.Fatal(errKey)
+	}
+	der, errDER := x509.MarshalPKCS8PrivateKey(deviceKey)
+	if errDER != nil {
+		t.Fatal(errDER)
+	}
+	planExpiresAt := int64(1794700800)
+	authJSON := string(credentials.Storage{
+		Type:             credentials.Provider,
+		AccessToken:      "access-secret",
+		RefreshToken:     "refresh-secret",
+		DevicePrivateKey: string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})),
+		Email:            "operator@example.com",
+		PlanExpiresAt:    &planExpiresAt,
+	}.JSON())
 	fetcher := &fakeFetcher{responses: map[string]pluginapi.QuotaFetchResponse{
 		"a1": {
 			Subscription: &pluginapi.QuotaSubscription{Plan: "pro", TierName: "paid"},
@@ -169,6 +189,7 @@ func TestPageRendersAccountAndModelGroupsWithoutCredentials(t *testing.T) {
 	for _, want := range []string{
 		"账户 1", "Account 1", "Mirasim (operator&#64;example&#46;com)",
 		"pro", "paid",
+		"套餐到期 / Plan expires:", "2026-11-15 00:00 UTC", "datetime=\"2026-11-15T00:00:00Z\"",
 		"Account limits", "Model limits",
 		"5h", "42.5%", "2026-09-20 08:00 UTC", "datetime=\"2026-09-20T08:00:00Z\"", "57.5% used",
 		"距重置 / Until reset", "data-countdown", "new Intl.DateTimeFormat", "Date.now()",
