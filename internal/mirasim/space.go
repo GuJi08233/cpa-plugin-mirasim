@@ -27,6 +27,8 @@ const (
 
 var spaceNodePattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
 var spaceIntegrationPattern = regexp.MustCompile(`^ig_[0-9a-f]{12}$`)
+var spaceAppSubjectPattern = regexp.MustCompile(`^ig-[0-9a-f]{12}$`)
+var spaceOpaqueReferencePattern = regexp.MustCompile(`^[A-Za-z0-9_-]{24,256}$`)
 
 // SpaceCredit amounts use the platform's integer credit unit: 100 credits
 // display as one US dollar. Never confuse these with token counts.
@@ -163,7 +165,10 @@ func (c *Client) checkSpacePayer(ctx context.Context, client pluginapi.HostHTTPC
 type spaceCapabilityFile struct {
 	NodeID string `json:"nodeId"`
 	AppID  string `json:"appId,omitempty"`
-	Token  string `json:"token"`
+	// Subject binds a server-side gtr reference to the application selected at
+	// its authenticated issuance endpoint. Its other scopes are not public.
+	Subject string `json:"subject,omitempty"`
+	Token   string `json:"token"`
 }
 
 type spaceTokenClaims struct {
@@ -187,6 +192,9 @@ func decodeSpaceClaims(token string) (spaceTokenClaims, error) {
 	if len(parts) != 3 || len(token) > 64<<10 || strings.ContainsAny(token, "\r\n\x00") {
 		return claims, fmt.Errorf("invalid space authorization")
 	}
+	if parts[0] == "gtr" && !spaceOpaqueReferencePattern.MatchString(parts[2]) {
+		return claims, fmt.Errorf("invalid space authorization reference")
+	}
 	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil || json.Unmarshal(payload, &claims) != nil || claims.Subject == "" || claims.Expires <= 0 {
 		return claims, fmt.Errorf("invalid space authorization claims")
@@ -197,10 +205,18 @@ func decodeSpaceClaims(token string) (spaceTokenClaims, error) {
 func (c *Client) installSpaceTokenLocked(node, token string) error {
 	claims, err := decodeSpaceClaims(token)
 	if err != nil {
-		return spaceError(http.StatusBadRequest, "space_authorization_invalid", "The space authorization must be a Mirasim-issued JWT with sub and exp claims")
+		return spaceError(http.StatusBadRequest, "space_authorization_invalid", "The space authorization must be a Mirasim-issued JWT or gtr token with sub and exp claims")
 	}
 	if app := strings.TrimSpace(c.options.SpaceAppID); app != "" {
-		if claims.Type != "gateway-turn" || claims.Audience != node || claims.App.Node != node || claims.App.ID != app ||
+		if strings.HasPrefix(token, "gtr.") {
+			// The gateway stores gtr scopes server-side. Initial application
+			// binding comes from the private exporter file; renewals must keep
+			// that established principal. The gateway checks the reference and
+			// the response still must confirm space billing.
+			if !spaceAppSubjectPattern.MatchString(claims.Subject) || claims.Subject != c.spaceTokenSubject {
+				return spaceError(http.StatusForbidden, "space_authorization_mismatch", "Opaque application authorization requires the matching subject in its configured space-capability-file")
+			}
+		} else if claims.Type != "gateway-turn" || claims.Audience != node || claims.App.Node != node || claims.App.ID != app ||
 			!spaceIntegrationPattern.MatchString(claims.App.Integration) || claims.Subject != "ig-"+strings.TrimPrefix(claims.App.Integration, "ig_") ||
 			claims.PaySpace != node || claims.PayAs != "app:"+app || !claims.PayOnly {
 			return spaceError(http.StatusForbidden, "space_authorization_mismatch", "The application capability must match space-node-id and space-app-id and require space-only billing")
@@ -212,6 +228,7 @@ func (c *Client) installSpaceTokenLocked(node, token string) error {
 		}
 	}
 	c.spaceToken = token
+	c.spaceTokenSubject = claims.Subject
 	c.spaceTokenExpiresAt = time.Unix(claims.Expires, 0)
 	c.storage.SpaceNodeID = node
 	c.storage.SpaceCapability = token
@@ -230,7 +247,16 @@ func (c *Client) readSpaceCapabilityFileLocked(node string) (string, error) {
 		supplied.AppID != strings.TrimSpace(c.options.SpaceAppID) || strings.TrimSpace(supplied.Token) == "" {
 		return "", spaceError(http.StatusBadRequest, "space_authorization_invalid", "space-capability-file must contain the selected nodeId, appId (for application mode), and its authorized token")
 	}
-	return strings.TrimSpace(supplied.Token), nil
+	token := strings.TrimSpace(supplied.Token)
+	if c.options.SpaceAppID != "" && strings.HasPrefix(token, "gtr.") {
+		claims, err := decodeSpaceClaims(token)
+		if err != nil || !spaceAppSubjectPattern.MatchString(supplied.Subject) || claims.Subject != supplied.Subject ||
+			(c.spaceTokenSubject != "" && c.spaceTokenSubject != supplied.Subject) {
+			return "", spaceError(http.StatusForbidden, "space_authorization_mismatch", "The opaque authorization file must bind the selected application's subject to its token")
+		}
+		c.spaceTokenSubject = supplied.Subject
+	}
+	return token, nil
 }
 
 // The initial capability must come from an authorized Mirasim integration.
@@ -277,7 +303,7 @@ func (c *Client) spaceCapabilityLocked(ctx context.Context, force bool) (string,
 			if err != nil {
 				return "", spaceError(http.StatusBadRequest, "space_authorization_invalid", "The rotated space authorization is invalid")
 			}
-			if time.Unix(claims.Expires, 0).After(c.nowTime().Add(spaceRefreshLead)) && time.Unix(claims.Expires, 0).After(c.spaceTokenExpiresAt) {
+			if time.Unix(claims.Expires, 0).After(c.nowTime().Add(spaceRefreshLead)) && !time.Unix(claims.Expires, 0).Before(c.spaceTokenExpiresAt) {
 				if err := c.installSpaceTokenLocked(node, token); err != nil {
 					return "", err
 				}

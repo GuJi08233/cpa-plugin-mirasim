@@ -17,6 +17,10 @@ function token(change = {}) {
     pay_space: 'pc-test', pay_as: 'app:cpa', pay_only: true, exp: Math.floor(Date.now() / 1000) + 600, ...change };
   return `header.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.signature`;
 }
+function opaqueToken(change = {}) {
+  const claims = { sub: 'ig-0123456789ab', exp: Math.floor(Date.now() / 1000) + 600, ...change };
+  return `gtr.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.${'a'.repeat(32)}`;
+}
 
 test('machine signature binds node, endpoint, timestamp, nonce and exact body', () => {
   const { publicKey, identity } = fixture();
@@ -36,6 +40,36 @@ test('export rejects capabilities with personal fallback, wrong app or expired s
     { pay_as: 'personal' }, { exp: 1 }, { sub: 'usr-test' }, { app: { node: 'pc-test', app: 'other' } }]) {
     assert.throws(() => validateCapability(token(change), 'pc-test', 'cpa'));
   }
+});
+
+test('opaque reference requires authenticated issuance for the exact space application', () => {
+  const capability = opaqueToken();
+  assert.throws(() => validateCapability(capability, 'pc-test', 'cpa'));
+  assert.throws(() => validateCapability(capability, 'pc-test', 'cpa', Date.now(), { nodeId: 'pc-other', appId: 'cpa' }));
+  assert.throws(() => validateCapability(capability, 'pc-test', 'cpa', Date.now(), { nodeId: 'pc-test', appId: 'other' }));
+  const issuer = { nodeId: 'pc-test', appId: 'cpa' };
+  assert.ok(validateCapability(capability, 'pc-test', 'cpa', Date.now(), issuer) > Date.now());
+  for (const change of [{ exp: 1 }, { sub: 'usr-personal' }, { sub: 'ig-malformed' }]) {
+    assert.throws(() => validateCapability(opaqueToken(change), 'pc-test', 'cpa', Date.now(), issuer));
+  }
+});
+
+test('authenticated opaque issuance exports application binding without inventing public scope claims', async () => {
+  const dir = await fs.mkdtemp(join(tmpdir(), 'mirasim-space-'));
+  try {
+    const identityFile = join(dir, 'identity.json'), output = join(dir, 'space.json');
+    await fs.writeFile(identityFile, JSON.stringify(fixture().identity), { mode: 0o600 });
+    const capability = opaqueToken();
+    const fetchImpl = async (url, options) => {
+      assert.equal(url, 'https://relay.mirasim.ai/v2/machines/pc-test/apps/turn-capability');
+      assert.equal(JSON.parse(options.body).app, 'cpa');
+      assert.match(options.headers.authorization, /^MirasimMachine v1\.pc-test\./);
+      return new Response(JSON.stringify({ token: capability, expiresAt: Date.now() + 600000 }));
+    };
+    await exportCapability({ nodeId: 'pc-test', appId: 'cpa', identityFile, output, fetchImpl });
+    const result = JSON.parse(await fs.readFile(output));
+    assert.deepEqual(result, { nodeId: 'pc-test', appId: 'cpa', subject: 'ig-0123456789ab', token: capability });
+  } finally { await fs.rm(dir, { recursive: true, force: true }); }
 });
 
 test('atomic export replaces old token with mode 600 and no temporary files', async () => {

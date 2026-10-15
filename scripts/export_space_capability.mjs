@@ -26,17 +26,30 @@ export function machineAuthorization({ nodeId, path, body, identity, now = Date.
   return `MirasimMachine v1.${nodeId}.${now}.${nonce}.${signature}`;
 }
 
-export function validateCapability(token, nodeId, appId, now = Date.now()) {
+export function validateCapability(token, nodeId, appId, now = Date.now(), issuance = null) {
   let claims;
   try {
     if (typeof token !== 'string' || token.length > 65536 || token.split('.').length !== 3) throw new Error();
     claims = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8'));
   } catch { throw new Error('The platform returned an invalid application capability'); }
+  if (!Number.isSafeInteger(claims.exp) || claims.exp * 1000 <= now + 120000) {
+    throw new Error('The application capability expires too soon');
+  }
+  if (token.startsWith('gtr.')) {
+    // Scopes of these reference tokens are stored by the platform. Accept
+    // only tokens returned directly by the authenticated app mint for this
+    // exact node/application; a pasted opaque token has no such provenance.
+    if (issuance?.nodeId !== nodeId || issuance?.appId !== appId ||
+        !/^ig-[0-9a-f]{12}$/.test(claims.sub ?? '') ||
+        !/^[A-Za-z0-9_-]{24,256}$/.test(token.split('.')[2])) {
+      throw new Error('The opaque application capability has no matching authenticated issuance');
+    }
+    return claims.exp * 1000;
+  }
   if (claims.typ !== 'gateway-turn' || claims.aud !== nodeId || claims.app?.node !== nodeId ||
       claims.app?.app !== appId || !/^ig_[0-9a-f]{12}$/.test(claims.app?.integration ?? '') ||
       claims.sub !== `ig-${claims.app.integration.slice(3)}` || claims.pay_space !== nodeId ||
-      claims.pay_as !== `app:${appId}` || claims.pay_only !== true ||
-      !Number.isSafeInteger(claims.exp) || claims.exp * 1000 <= now + 120000) {
+      claims.pay_as !== `app:${appId}` || claims.pay_only !== true) {
     throw new Error('The application capability has the wrong identity, billing scope, or expiry');
   }
   return claims.exp * 1000;
@@ -85,8 +98,9 @@ export async function exportCapability({ nodeId, appId, identityFile, output, re
   const raw = await response.text();
   if (raw.length > 128 * 1024) throw new Error('Oversized capability response');
   const result = JSON.parse(raw);
-  const expiresAt = validateCapability(result.token, nodeId, appId);
-  await writeCapability(output, { nodeId, appId, token: result.token });
+  const expiresAt = validateCapability(result.token, nodeId, appId, Date.now(), { nodeId, appId });
+  const subject = JSON.parse(Buffer.from(result.token.split('.')[1], 'base64url').toString('utf8')).sub;
+  await writeCapability(output, { nodeId, appId, subject, token: result.token });
   return expiresAt;
 }
 

@@ -144,6 +144,7 @@ type Client struct {
 	quota                 QuotaSnapshot
 	authProxyURL          string
 	spaceToken            string
+	spaceTokenSubject     string
 	spaceTokenExpiresAt   time.Time
 	now                   func() time.Time
 }
