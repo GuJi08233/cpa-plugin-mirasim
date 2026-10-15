@@ -12,6 +12,7 @@ type RelayOptions struct {
 	Locale              string
 	SpaceNodeID         string
 	SpaceCapabilityFile string
+	SpaceAppID          string
 	// HTTP1Only and LowercaseRelayHeaders shape the outbound wire profile the
 	// host applies to relay calls. Both default on: a capture of the official
 	// 0.0.336 client shows it offering only http/1.1 in its TLS ALPN and

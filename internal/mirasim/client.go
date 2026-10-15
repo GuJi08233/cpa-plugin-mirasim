@@ -196,7 +196,7 @@ func (c *Client) NextRefreshAfter(now time.Time) time.Time {
 	if profileNext.Before(next) {
 		next = profileNext
 	}
-	if c.options.SpaceNodeID != "" || c.options.SpaceCapabilityFile != "" {
+	if c.options.SpaceNodeID != "" || c.options.SpaceCapabilityFile != "" || c.options.SpaceAppID != "" {
 		if claims, err := decodeSpaceClaims(c.storage.SpaceCapability); err == nil {
 			if spaceNext := time.Unix(claims.Expires, 0).Add(-spaceRefreshLead); spaceNext.After(now) && spaceNext.Before(next) {
 				next = spaceNext

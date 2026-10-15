@@ -53,6 +53,7 @@ plugins:
 | `client-version` | `0.0.501` | 上报的客户端版本。旧凭证在下次保存或刷新时改成这项的值。 |
 | `space-node-id` | 空（个人额度） | 实验性空间模式。填写目标空间的节点 ID 后，推理走空间网关，额度页显示空间余额。需要另行提供空间会话授权，详见下文。 |
 | `space-capability-file` | 空 | 用于初始化空间授权的私有 JSON 文件路径。文件须含 `nodeId` 和 Mirasim 签发的 `token`；普通 OAuth token 不能用于空间网关。 |
+| `space-app-id` | 空 | 已登记的空间接口应用 ID。启用后推理使用该应用的空间专用授权，按应用归属计费；授权文件还须含相同的 `appId`。 |
 
 环境变量依次为 `MIRASIM_OAUTH_LOGIN_PROVIDER`、`MIRASIM_OAUTH_CALLBACK_PORT`、`MIRASIM_COLLECT`、`MIRASIM_LOCALE`、`MIRASIM_RELAY_URL`、`MIRASIM_ADMIN_URL`、`MIRASIM_CLIENT_VERSION`。
 
@@ -126,7 +127,7 @@ Kimi 的模型名以中继目录为准，现在是 `kimi-k3`。中间有个版�
 
 ### 空间模式（开发预览）
 
-此模式的转发、续期和额度查询已有实现与本地测试，**初始空间授权的自动签发尚未接通，尚未完成真实空间推理的端到端验证**。不要仅凭下面的配置就替换生产插件。
+从 `1.6.0-dev.2` 起，可通过本机已登记的 Mirasim 空间应用签发初始授权。已实测空间网关的 Responses 流式推理返回正常结果及 `x-mirasim-payer: space`。应用模式直接转发原始模型 API，不创建智能体会话，也不把请求改写成 CLI 提示词。
 
 空间额度独立于个人套餐。空间查询使用当前 OAuth 账号访问 `/v2/machines/{nodeId}/credit`；模型请求使用空间会话授权，访问 `/v2/gateway/model/v1/...`。现有 OAuth 登录流程不会生成这种会话授权。
 
@@ -152,15 +153,45 @@ plugins:
 
 限制该文件的读取权限。CPA 在 Docker 中运行时，需要将文件只读挂载到容器，并填写容器内的路径。
 
-也可以在对应的 CPA OAuth 凭证 JSON 中保存 `space_node_id` 与 `space_capability`，并配置相同的 `space-node-id`。授权必须属于该 OAuth 账号，文件里的节点 ID 必须与配置一致。插件会通过 `/v2/gateway/turn-capability/renew` 续期，并在 CPA 的凭证刷新生命周期中保存更新后的授权。多个账号只有各自取得对应空间授权后才能使用此模式；不要给不同账号共用同一份授权文件。
+成员授权也可以在对应的 CPA OAuth 凭证 JSON 中保存 `space_node_id` 与 `space_capability`，并配置相同的 `space-node-id`。成员授权必须属于该 OAuth 账号，文件里的节点 ID 必须与配置一致。插件会通过 `/v2/gateway/turn-capability/renew` 续期，并在 CPA 的凭证刷新生命周期中保存更新后的授权。不要给不同账号共用同一份成员授权文件。
 
-本机客户端正在使用空间授权，不代表它提供了可供 CPA 独立使用的签发或导出接口。本版本不从运行中的客户端提取内存或借用当前对话的授权。初始授权接口尚待平台确认；没有有效授权时推理明确报错，空间余额查询仍可使用。
+#### 应用授权：在空间宿主机上签发
+
+这条链路需要**目标空间本身的宿主机权限**及它已登记的 Mirasim 主机身份，单有普通 OAuth 不够。在目标空间的工作区里，使用 Mirasim 官方工具登记一个供 CPA 使用的接口应用：
+
+```sh
+~/.mirasim/bin/mirasim-publish init --kind api --template blank --id cpa-model-gateway --title 'CPA Space Model Gateway' --workspace /path/to/workspace
+~/.mirasim/bin/mirasim-publish apps cpa-model-gateway --json
+```
+
+保留 `access.mode: token`、`permissions: []`、`handler.type: direct` 和默认空间计费。无需生成外部事件访问令牌，也无需开放匿名入口。应用会出现在空间设置的应用列表中，模型用量归属于它。
+
+在**宿主机**运行仓库附带的签发工具（Node.js 20 或更新版本）：
+
+```sh
+node scripts/export_space_capability.mjs \
+  --node-id pc-your-space --app-id cpa-model-gateway \
+  --identity-file ~/.mirasim/mirachannel-v2/instance.json \
+  --output /private/cpa-secrets/space.json --watch
+```
+
+工具使用官方主机签名格式调用 `POST /v2/machines/{nodeId}/apps/turn-capability`，默认每 240 秒重新签发，原子更新权限为 600 的文件；失败保留上一次文件并重试。可用 systemd 等服务管理器托管此进程。**主机私钥留在宿主机，只把输出的应用授权文件提供给 CPA。** 不读取会话缓存或进程内存，不借用当前对话的令牌。
+
+CPA 的配置如下（文件路径用容器内路径；原子轮换时应挂载文件所在目录）：
+
+```yaml
+space-node-id: pc-your-space
+space-app-id: cpa-model-gateway
+space-capability-file: /run/secrets/mirasim/space.json
+```
+
+应用授权文件含 `nodeId`、`appId`、`token`。插件校验令牌的应用身份、空间、付款归属和 `pay_only: true`，拒绝个人付款或其他应用的令牌；初始加载、即将到期或授权失败重试时会读取轮换后的文件。现有网关续期仍然可用，宿主工具重新签发可覆盖 CPA 长时间停机后旧令牌已过期的情况。OAuth 账号仍用于读取空间模型目录和额度，需要该空间的访问权限。应用推理的归属是应用，不是这个 OAuth 成员。
 
 每次推理前，插件确认空间已开启、余额和成员份额可用，且该成员选择了空间付款。成功响应还必须带 `x-mirasim-payer: space`。授权失效会尝试续期一次；插件不会改走个人中继。付款方未确认时返回 HTTP 409，不重发已成功的模型请求。
 
-上游可能在余额或成员份额不足时回退个人付款。请求前检查不能消除并发消费导致的变化，响应头也只能事后确认付款方，因此本版本不保证上游绝不扣个人额度。遇到付款方不符，先核对账单再重试。
+普通成员授权的上游可能在余额或成员份额不足时回退个人付款；请求前检查不能消除并发消费导致的变化，响应头只能事后确认。应用模式另外要求平台令牌声明 `pay_only: true`，由上游强制空间付款。两种模式都检查实际付款响应头；遇到不符，先核对账单再重试。
 
-空间额度页展示美元金额、空间剩余比例、成员上限和当前付款方。空间模式不提供个人重置卡操作。清空两项空间配置后恢复个人额度模式，原有 OAuth 登录与个人推理流程继续可用。
+空间额度页展示美元金额、空间剩余比例、成员上限和当前付款方。空间模式不提供个人重置卡操作。清空 `space-node-id`、`space-capability-file`、`space-app-id` 后恢复个人额度模式，原有 OAuth 登录与个人推理流程继续可用。
 
 ### 个人额度与管理中心
 

@@ -7,12 +7,13 @@ import (
 func TestSpaceConfigurationOverridesEnvironmentAndCanBeDisabled(t *testing.T) {
 	t.Setenv("MIRASIM_SPACE_NODE_ID", "pc-env")
 	t.Setenv("MIRASIM_SPACE_CAPABILITY_FILE", "/private/env.json")
-	settings := Parse([]byte("space-node-id: pc-config\nspace-capability-file: /private/config.json\n"))
-	if settings.SpaceNodeID != "pc-config" || settings.SpaceCapabilityFile != "/private/config.json" {
+	t.Setenv("MIRASIM_SPACE_APP_ID", "env-app")
+	settings := Parse([]byte("space-node-id: pc-config\nspace-capability-file: /private/config.json\nspace-app-id: cpa\n"))
+	if settings.SpaceNodeID != "pc-config" || settings.SpaceCapabilityFile != "/private/config.json" || settings.SpaceAppID != "cpa" {
 		t.Fatalf("space configuration did not override environment")
 	}
-	settings = Parse([]byte("space-node-id: ''\nspace-capability-file: ''\n"))
-	if settings.SpaceNodeID != "" || settings.SpaceCapabilityFile != "" {
+	settings = Parse([]byte("space-node-id: ''\nspace-capability-file: ''\nspace-app-id: ''\n"))
+	if settings.SpaceNodeID != "" || settings.SpaceCapabilityFile != "" || settings.SpaceAppID != "" {
 		t.Fatal("space settings could not be cleared")
 	}
 }

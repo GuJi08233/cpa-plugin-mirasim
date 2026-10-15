@@ -30,6 +30,8 @@ type Settings struct {
 	// an ordinary OAuth access token. Secrets stay outside the YAML config.
 	SpaceNodeID         string `yaml:"space-node-id"`
 	SpaceCapabilityFile string `yaml:"space-capability-file"`
+	// SpaceAppID opts into a registered application's space-only capability.
+	SpaceAppID string `yaml:"space-app-id"`
 	// OAuthLoginProvider names the Mirasim sign-in provider used for browser login
 	// when the caller does not request one.
 	OAuthLoginProvider string `yaml:"oauth-login-provider"`
@@ -144,6 +146,9 @@ func Parse(raw []byte) Settings {
 		if _, present := section["space-capability-file"]; present {
 			settings.SpaceCapabilityFile = strings.TrimSpace(configured.SpaceCapabilityFile)
 		}
+		if _, present := section["space-app-id"]; present {
+			settings.SpaceAppID = strings.TrimSpace(configured.SpaceAppID)
+		}
 	}
 	return settings
 }
@@ -192,6 +197,7 @@ func Defaults() Settings {
 		ClientVersion:         firstNonEmpty(strings.TrimSpace(os.Getenv("MIRASIM_CLIENT_VERSION")), DefaultClientVersion),
 		SpaceNodeID:           strings.TrimSpace(os.Getenv("MIRASIM_SPACE_NODE_ID")),
 		SpaceCapabilityFile:   strings.TrimSpace(os.Getenv("MIRASIM_SPACE_CAPABILITY_FILE")),
+		SpaceAppID:            strings.TrimSpace(os.Getenv("MIRASIM_SPACE_APP_ID")),
 		OAuthLoginProvider:    firstNonEmpty(cleanProvider(os.Getenv("MIRASIM_OAUTH_LOGIN_PROVIDER")), DefaultOAuthLoginProvider),
 		OAuthCallbackPort:     cleanPort(os.Getenv("MIRASIM_OAUTH_CALLBACK_PORT")),
 		HTTP1Only:             boolOrDefault(os.Getenv("MIRASIM_HTTP1_ONLY"), true),

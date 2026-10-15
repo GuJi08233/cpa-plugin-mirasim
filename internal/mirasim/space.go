@@ -26,6 +26,7 @@ const (
 )
 
 var spaceNodePattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
+var spaceIntegrationPattern = regexp.MustCompile(`^ig_[0-9a-f]{12}$`)
 
 // SpaceCredit amounts use the platform's integer credit unit: 100 credits
 // display as one US dollar. Never confuse these with token counts.
@@ -62,7 +63,7 @@ func (s SpaceCredit) Clone() *SpaceCredit {
 func (c *Client) SpaceEnabled() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.options.SpaceNodeID != "" || c.options.SpaceCapabilityFile != ""
+	return c.options.SpaceNodeID != "" || c.options.SpaceCapabilityFile != "" || c.options.SpaceAppID != ""
 }
 
 func (c *Client) spaceNodeLocked() (string, error) {
@@ -161,12 +162,23 @@ func (c *Client) checkSpacePayer(ctx context.Context, client pluginapi.HostHTTPC
 
 type spaceCapabilityFile struct {
 	NodeID string `json:"nodeId"`
+	AppID  string `json:"appId,omitempty"`
 	Token  string `json:"token"`
 }
 
 type spaceTokenClaims struct {
-	Subject string `json:"sub"`
-	Expires int64  `json:"exp"`
+	Subject  string `json:"sub"`
+	Expires  int64  `json:"exp"`
+	Type     string `json:"typ"`
+	Audience any    `json:"aud"`
+	PaySpace string `json:"pay_space"`
+	PayAs    string `json:"pay_as"`
+	PayOnly  bool   `json:"pay_only"`
+	App      struct {
+		Node        string `json:"node"`
+		ID          string `json:"app"`
+		Integration string `json:"integration"`
+	} `json:"app"`
 }
 
 func decodeSpaceClaims(token string) (spaceTokenClaims, error) {
@@ -187,15 +199,38 @@ func (c *Client) installSpaceTokenLocked(node, token string) error {
 	if err != nil {
 		return spaceError(http.StatusBadRequest, "space_authorization_invalid", "The space authorization must be a Mirasim-issued JWT with sub and exp claims")
 	}
-	login, err := decodeSpaceClaims(c.accessToken)
-	if err != nil || claims.Subject != login.Subject {
-		return spaceError(http.StatusForbidden, "space_authorization_mismatch", "The space authorization belongs to a different OAuth account")
+	if app := strings.TrimSpace(c.options.SpaceAppID); app != "" {
+		if claims.Type != "gateway-turn" || claims.Audience != node || claims.App.Node != node || claims.App.ID != app ||
+			!spaceIntegrationPattern.MatchString(claims.App.Integration) || claims.Subject != "ig-"+strings.TrimPrefix(claims.App.Integration, "ig_") ||
+			claims.PaySpace != node || claims.PayAs != "app:"+app || !claims.PayOnly {
+			return spaceError(http.StatusForbidden, "space_authorization_mismatch", "The application capability must match space-node-id and space-app-id and require space-only billing")
+		}
+	} else {
+		login, err := decodeSpaceClaims(c.accessToken)
+		if err != nil || claims.Subject != login.Subject || claims.App.ID != "" {
+			return spaceError(http.StatusForbidden, "space_authorization_mismatch", "The space authorization belongs to a different OAuth account; application capabilities require space-app-id")
+		}
 	}
 	c.spaceToken = token
 	c.spaceTokenExpiresAt = time.Unix(claims.Expires, 0)
 	c.storage.SpaceNodeID = node
 	c.storage.SpaceCapability = token
 	return nil
+}
+
+func (c *Client) readSpaceCapabilityFileLocked(node string) (string, error) {
+	f, err := os.Open(strings.TrimSpace(c.options.SpaceCapabilityFile))
+	if err != nil {
+		return "", spaceError(http.StatusServiceUnavailable, "space_authorization_missing", "Cannot read space-capability-file")
+	}
+	defer f.Close()
+	raw, err := io.ReadAll(io.LimitReader(f, (128<<10)+1))
+	var supplied spaceCapabilityFile
+	if err != nil || len(raw) > 128<<10 || json.Unmarshal(raw, &supplied) != nil || supplied.NodeID != node ||
+		supplied.AppID != strings.TrimSpace(c.options.SpaceAppID) || strings.TrimSpace(supplied.Token) == "" {
+		return "", spaceError(http.StatusBadRequest, "space_authorization_invalid", "space-capability-file must contain the selected nodeId, appId (for application mode), and its authorized token")
+	}
+	return strings.TrimSpace(supplied.Token), nil
 }
 
 // The initial capability must come from an authorized Mirasim integration.
@@ -211,18 +246,11 @@ func (c *Client) spaceCapabilityLocked(ctx context.Context, force bool) (string,
 	}
 	if c.spaceToken == "" {
 		token := c.storage.SpaceCapability
-		if file := strings.TrimSpace(c.options.SpaceCapabilityFile); file != "" && (token == "" || c.storage.SpaceNodeID != node) {
-			f, errOpen := os.Open(file)
-			if errOpen != nil {
-				return "", spaceError(http.StatusServiceUnavailable, "space_authorization_missing", "Cannot read space-capability-file")
+		if file := strings.TrimSpace(c.options.SpaceCapabilityFile); file != "" {
+			token, err = c.readSpaceCapabilityFileLocked(node)
+			if err != nil {
+				return "", err
 			}
-			raw, errRead := io.ReadAll(io.LimitReader(f, (128<<10)+1))
-			_ = f.Close()
-			var supplied spaceCapabilityFile
-			if errRead != nil || len(raw) > 128<<10 || json.Unmarshal(raw, &supplied) != nil || supplied.NodeID != node {
-				return "", spaceError(http.StatusBadRequest, "space_authorization_invalid", "space-capability-file must contain the selected nodeId and its authorized token")
-			}
-			token = strings.TrimSpace(supplied.Token)
 		} else if token != "" && c.storage.SpaceNodeID != node {
 			return "", spaceError(http.StatusBadRequest, "space_authorization_mismatch", "Stored space authorization does not match space-node-id")
 		}
@@ -235,6 +263,27 @@ func (c *Client) spaceCapabilityLocked(ctx context.Context, force bool) (string,
 	}
 	if !force && c.nowTime().Before(c.spaceTokenExpiresAt.Add(-spaceRefreshLead)) {
 		return c.spaceToken, nil
+	}
+	// A host-side exporter can issue a new application capability without
+	// handing its machine signing key to CPA. Adopt rotated files before renewal,
+	// including after CPA was offline long enough for the old token to expire.
+	if strings.TrimSpace(c.options.SpaceCapabilityFile) != "" {
+		token, err := c.readSpaceCapabilityFileLocked(node)
+		if err != nil {
+			return "", err
+		}
+		if token != c.spaceToken {
+			claims, err := decodeSpaceClaims(token)
+			if err != nil {
+				return "", spaceError(http.StatusBadRequest, "space_authorization_invalid", "The rotated space authorization is invalid")
+			}
+			if time.Unix(claims.Expires, 0).After(c.nowTime().Add(spaceRefreshLead)) && time.Unix(claims.Expires, 0).After(c.spaceTokenExpiresAt) {
+				if err := c.installSpaceTokenLocked(node, token); err != nil {
+					return "", err
+				}
+				return c.spaceToken, nil
+			}
+		}
 	}
 	endpoint, _, err := c.endpoint(spaceRenewPath, nil)
 	if err != nil {
