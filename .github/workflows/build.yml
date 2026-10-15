@@ -55,9 +55,9 @@ jobs:
           echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
           echo "Build version: ${VERSION}"
 
-      - name: Validate store release tag
+      - name: Validate release tag
         if: github.ref_type == 'tag'
-        run: python3 scripts/plugin_store.py validate-tag --tag "$GITHUB_REF_NAME"
+        run: python3 scripts/plugin_store.py validate-tag --tag "$GITHUB_REF_NAME" --allow-prerelease
 
       - name: Test release tooling
         run: python3 -m unittest discover -s scripts -p 'test_plugin_store.py' -v
@@ -316,8 +316,8 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: Validate plugin store assets
-        run: python3 scripts/plugin_store.py verify-release --tag "$GITHUB_REF_NAME" --directory dist
+      - name: Validate release assets
+        run: python3 scripts/plugin_store.py verify-release --tag "$GITHUB_REF_NAME" --directory dist --allow-prerelease
 
       - name: Publish GitHub release
         env:
@@ -326,12 +326,22 @@ jobs:
         run: |
           set -euo pipefail
           (cd dist && sha256sum --check checksums.txt)
+          release_flags=()
+          release_notes="Automated release for ${GITHUB_REF_NAME}."
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
+            release_flags+=(--prerelease --latest=false)
+            release_notes="Development preview for ${GITHUB_REF_NAME}. See README for known limitations."
+          fi
           if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
+              gh release edit "${GITHUB_REF_NAME}" "${release_flags[@]}" --repo "${GITHUB_REPOSITORY}"
+            fi
             gh release upload "${GITHUB_REF_NAME}" dist/*.zip dist/checksums.txt --clobber --repo "${GITHUB_REPOSITORY}"
           else
             gh release create "${GITHUB_REF_NAME}" dist/*.zip dist/checksums.txt \
               --repo "${GITHUB_REPOSITORY}" \
               --verify-tag \
               --title "${GITHUB_REF_NAME}" \
-              --notes "Automated release for ${GITHUB_REF_NAME}."
+              --notes "${release_notes}" \
+              "${release_flags[@]}"
           fi

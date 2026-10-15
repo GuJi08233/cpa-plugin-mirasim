@@ -35,6 +35,37 @@ class PluginStoreTests(unittest.TestCase):
             with self.subTest(tag=tag), self.assertRaises(ValueError):
                 release_version(tag)
 
+    def test_prerelease_tags_require_opt_in_and_remain_validated(self):
+        for tag in ("v1.6.0-dev", "v1.6.0-rc.1", "v1.6.0-dev-2"):
+            with self.subTest(tag=tag):
+                self.assertEqual(release_version(tag, allow_prerelease=True), tag[1:])
+                with self.assertRaises(ValueError):
+                    release_version(tag)
+        for tag in ("v1.6.0-", "v1.6.0-dev..1", "v1.6.0-dev/other", "v1.6.0-dev\n", "v1.6.0-dev+build"):
+            with self.subTest(tag=tag), self.assertRaises(ValueError):
+                release_version(tag, allow_prerelease=True)
+
+    def test_prerelease_assets_use_the_tag_version(self):
+        for platform in PLATFORMS:
+            old = self.root / f"mirasim_0.7.1_{platform}.zip"
+            new = self.root / f"mirasim_1.6.0-dev_{platform}.zip"
+            old.rename(new)
+            old.with_suffix(".zip.sha256").unlink()
+            digest = hashlib.sha256(new.read_bytes()).hexdigest()
+            new.with_suffix(".zip.sha256").write_text(f"{digest}  {new.name}\n")
+        with self.assertRaises(ValueError):
+            verify_release(self.root, "v1.6.0-dev")
+        assets = verify_release(self.root, "v1.6.0-dev", allow_prerelease=True)
+        self.assertEqual(len(assets), len(PLATFORMS))
+        checksums = (self.root / "checksums.txt").read_text()
+        self.assertIn("mirasim_1.6.0-dev_linux_amd64.zip", checksums)
+        self.assertNotIn("0.7.1", checksums)
+
+    def test_store_submission_still_rejects_prereleases(self):
+        with self.assertRaises(ValueError):
+            prepare_submission(self.root, "https://github.com/KIDA-MNESIA/cpa-plugin-mirasim", "KIDA-MNESIA", "v1.6.0-dev")
+        self.assertFalse((self.root / "registry.json").exists())
+
     def test_complete_release_writes_portable_checksums(self):
         names = verify_release(self.root, "v0.7.1")
         self.assertEqual(len(names), 7)

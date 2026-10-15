@@ -21,14 +21,17 @@ PLATFORMS = {
 }
 
 
-def release_version(tag):
-    if not re.fullmatch(r"v[0-9]+(?:\.[0-9]+)+", tag):
+def release_version(tag, *, allow_prerelease=False):
+    suffix = r"(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?" if allow_prerelease else ""
+    if not re.fullmatch(r"v[0-9]+(?:\.[0-9]+)+" + suffix, tag):
+        if allow_prerelease:
+            raise ValueError("release tags require a dotted numeric version with an optional prerelease suffix")
         raise ValueError("store releases require a dotted numeric tag, for example v0.7.1")
     return tag[1:]
 
 
-def verify_release(directory, tag):
-    version = release_version(tag)
+def verify_release(directory, tag, *, allow_prerelease=False):
+    version = release_version(tag, allow_prerelease=allow_prerelease)
     expected = {
         f"{PLUGIN_ID}_{version}_{platform}.zip": f"{PLUGIN_ID}.{extension}"
         for platform, extension in PLATFORMS.items()
@@ -125,9 +128,11 @@ def main():
     commands = parser.add_subparsers(dest="command", required=True)
     tag = commands.add_parser("validate-tag")
     tag.add_argument("--tag", required=True)
+    tag.add_argument("--allow-prerelease", action="store_true")
     verify = commands.add_parser("verify-release")
     verify.add_argument("--tag", required=True)
     verify.add_argument("--directory", type=Path, required=True)
+    verify.add_argument("--allow-prerelease", action="store_true")
     prepare = commands.add_parser("prepare-submission")
     prepare.add_argument("--tag", required=True)
     prepare.add_argument("--repository", required=True)
@@ -136,9 +141,9 @@ def main():
     args = parser.parse_args()
     try:
         if args.command == "validate-tag":
-            print(release_version(args.tag))
+            print(release_version(args.tag, allow_prerelease=args.allow_prerelease))
         elif args.command == "verify-release":
-            assets = verify_release(args.directory, args.tag)
+            assets = verify_release(args.directory, args.tag, allow_prerelease=args.allow_prerelease)
             print(f"Verified {len(assets)} plugin archives; wrote checksums.txt")
         else:
             prepare_submission(args.output_dir, args.repository, args.author, args.tag)
