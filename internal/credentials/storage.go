@@ -46,6 +46,8 @@ type Storage struct {
 	RelayURL         string         `json:"relay_url,omitempty"`
 	AdminURL         string         `json:"admin_url,omitempty"`
 	ClientVersion    string         `json:"client_version,omitempty"`
+	SpaceNodeID      string         `json:"space_node_id,omitempty"`
+	SpaceCapability  string         `json:"space_capability,omitempty"`
 	Raw              map[string]any `json:"-"`
 }
 
@@ -119,6 +121,8 @@ func (s *Storage) applyDefaults() {
 	s.RelayURL = strings.TrimRight(strings.TrimSpace(s.RelayURL), "/")
 	s.AdminURL = strings.TrimRight(strings.TrimSpace(s.AdminURL), "/")
 	s.ClientVersion = strings.TrimSpace(s.ClientVersion)
+	s.SpaceNodeID = strings.TrimSpace(s.SpaceNodeID)
+	s.SpaceCapability = strings.TrimSpace(s.SpaceCapability)
 	if s.RelayURL == "" {
 		s.RelayURL = pluginconfig.DefaultRelayURL
 	}
@@ -175,13 +179,15 @@ func (s Storage) JSON() []byte {
 	setOrDelete(out, "relay_url", strings.TrimSpace(s.RelayURL))
 	setOrDelete(out, "admin_url", strings.TrimSpace(s.AdminURL))
 	setOrDelete(out, "client_version", strings.TrimSpace(s.ClientVersion))
+	setOrDelete(out, "space_node_id", strings.TrimSpace(s.SpaceNodeID))
+	setOrDelete(out, "space_capability", strings.TrimSpace(s.SpaceCapability))
 	out["auth_kind"] = "oauth"
 	raw, _ := json.Marshal(out)
 	return raw
 }
 
 func (s Storage) Key() string {
-	return strings.Join([]string{s.AccountID, deviceFingerprint(s.DevicePrivateKey), s.RelayURL, s.AdminURL, s.ClientVersion}, "\x00")
+	return strings.Join([]string{s.AccountID, deviceFingerprint(s.DevicePrivateKey), s.RelayURL, s.AdminURL, s.ClientVersion, s.SpaceNodeID}, "\x00")
 }
 
 func (s Storage) AuthData(id, fileName string, nextRefresh time.Time) pluginapi.AuthData {
@@ -208,6 +214,12 @@ func (s Storage) AuthData(id, fileName string, nextRefresh time.Time) pluginapi.
 	}
 	if s.PlanExpiresAt != nil {
 		metadata["plan_exp"] = *s.PlanExpiresAt
+	}
+	if s.SpaceNodeID != "" {
+		metadata["space_node_id"] = s.SpaceNodeID
+	}
+	if s.SpaceCapability != "" {
+		metadata["space_capability"] = s.SpaceCapability
 	}
 	return pluginapi.AuthData{
 		Provider:    Provider,

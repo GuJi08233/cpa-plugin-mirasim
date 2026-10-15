@@ -565,3 +565,41 @@ func TestRefreshAuthReturnsRotatedCredentialsForHostPersistence(t *testing.T) {
 		t.Fatal("RefreshAuth() lost standard or host-managed attributes")
 	}
 }
+
+func TestSpaceRenewalFailureDoesNotDiscardRotatedOAuthCredentials(t *testing.T) {
+	newAccess := identityJWT("usr-test", "test@example.com", time.Now().Add(time.Hour))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/refresh":
+			_ = json.NewEncoder(w).Encode(map[string]string{"access_token": newAccess, "refresh_token": "rotated-refresh"})
+		case "/v2/gateway/turn-capability/renew":
+			w.WriteHeader(http.StatusForbidden)
+		default:
+			t.Error("unexpected endpoint", r.URL.Path)
+			w.WriteHeader(404)
+		}
+	}))
+	defer server.Close()
+	settings := pluginconfig.Defaults()
+	settings.SpaceNodeID = "pc-test"
+	settings.RelayURL, settings.AdminURL = server.URL, server.URL
+	storage, err := credentials.InstallOAuth(credentials.FromSettings(settings), identityJWT("usr-test", "test@example.com", time.Now().Add(time.Hour)), "old-refresh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	storage.RecordProfile("", "", nil, time.Now())
+	storage.SpaceNodeID = "pc-test"
+	storage.SpaceCapability = identityJWT("usr-test", "test@example.com", time.Now().Add(-time.Minute))
+	provider := New(settings, mirasim.NewPool(mirasim.RelayOptions{SpaceNodeID: "pc-test"}))
+	response, err := provider.RefreshAuth(context.Background(), pluginapi.AuthRefreshRequest{AuthID: "auth", StorageJSON: storage.JSON()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var persisted credentials.Storage
+	if json.Unmarshal(response.Auth.StorageJSON, &persisted) != nil || persisted.RefreshToken != "rotated-refresh" || persisted.AccessToken != newAccess {
+		t.Fatal("a failed space renewal discarded rotated OAuth credentials")
+	}
+	if response.Auth.Metadata["space_authorization_status"] != "unavailable" || !response.NextRefreshAfter.After(time.Now().Add(30*time.Second)) {
+		t.Fatal("space renewal failure was hidden or caused an immediate refresh loop")
+	}
+}

@@ -25,6 +25,11 @@ type Settings struct {
 	RelayURL      string `yaml:"relay-url"`
 	AdminURL      string `yaml:"admin-url"`
 	ClientVersion string `yaml:"client-version"`
+	// SpaceNodeID selects the space gateway instead of personal relay inference.
+	// The capability file contains a Mirasim-issued space authorization, never
+	// an ordinary OAuth access token. Secrets stay outside the YAML config.
+	SpaceNodeID         string `yaml:"space-node-id"`
+	SpaceCapabilityFile string `yaml:"space-capability-file"`
 	// OAuthLoginProvider names the Mirasim sign-in provider used for browser login
 	// when the caller does not request one.
 	OAuthLoginProvider string `yaml:"oauth-login-provider"`
@@ -127,7 +132,20 @@ func Parse(raw []byte) Settings {
 			return settings
 		}
 	}
-	return merge(settings, configured)
+	settings = merge(settings, configured)
+	// An explicit empty space selector disables an environment default. A
+	// billing route must be possible to turn off with ordinary empty YAML.
+	var document map[string]any
+	if yaml.Unmarshal(raw, &document) == nil {
+		section := pluginSection(document)
+		if _, present := section["space-node-id"]; present {
+			settings.SpaceNodeID = strings.TrimSpace(configured.SpaceNodeID)
+		}
+		if _, present := section["space-capability-file"]; present {
+			settings.SpaceCapabilityFile = strings.TrimSpace(configured.SpaceCapabilityFile)
+		}
+	}
+	return settings
 }
 
 func merge(settings, configured Settings) Settings {
@@ -172,6 +190,8 @@ func Defaults() Settings {
 		RelayURL:              firstNonEmpty(cleanURL(os.Getenv("MIRASIM_RELAY_URL")), DefaultRelayURL),
 		AdminURL:              firstNonEmpty(cleanURL(os.Getenv("MIRASIM_ADMIN_URL")), DefaultAdminURL),
 		ClientVersion:         firstNonEmpty(strings.TrimSpace(os.Getenv("MIRASIM_CLIENT_VERSION")), DefaultClientVersion),
+		SpaceNodeID:           strings.TrimSpace(os.Getenv("MIRASIM_SPACE_NODE_ID")),
+		SpaceCapabilityFile:   strings.TrimSpace(os.Getenv("MIRASIM_SPACE_CAPABILITY_FILE")),
 		OAuthLoginProvider:    firstNonEmpty(cleanProvider(os.Getenv("MIRASIM_OAUTH_LOGIN_PROVIDER")), DefaultOAuthLoginProvider),
 		OAuthCallbackPort:     cleanPort(os.Getenv("MIRASIM_OAUTH_CALLBACK_PORT")),
 		HTTP1Only:             boolOrDefault(os.Getenv("MIRASIM_HTTP1_ONLY"), true),

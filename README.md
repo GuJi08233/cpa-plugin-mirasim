@@ -47,8 +47,12 @@ plugins:
 | `relay-url` | `https://relay.mirasim.ai` | 一般不用改。 |
 | `admin-url` | `https://auth.mirasim.ai` | 一般不用改。 |
 | `client-version` | `0.0.501` | 上报的客户端版本。旧凭证在下次保存或刷新时改成这项的值。 |
+| `space-node-id` | 空（个人额度） | 实验性空间模式。填写目标空间的节点 ID 后，推理走空间网关，额度页显示空间余额。需要另行提供空间会话授权，详见下文。 |
+| `space-capability-file` | 空 | 用于初始化空间授权的私有 JSON 文件路径。文件须含 `nodeId` 和 Mirasim 签发的 `token`；普通 OAuth token 不能用于空间网关。 |
 
 环境变量依次为 `MIRASIM_OAUTH_LOGIN_PROVIDER`、`MIRASIM_OAUTH_CALLBACK_PORT`、`MIRASIM_COLLECT`、`MIRASIM_LOCALE`、`MIRASIM_RELAY_URL`、`MIRASIM_ADMIN_URL`、`MIRASIM_CLIENT_VERSION`。
+
+空间配置对应 `MIRASIM_SPACE_NODE_ID`、`MIRASIM_SPACE_CAPABILITY_FILE`。YAML 中显式写空字符串可以关闭相应环境变量的默认值。
 
 `http1-only` 与 `lowercase-relay-headers` 默认开启，用来贴近官方桌面客户端的请求外形。设为 `false` 则改回 Go 的默认传输。对应 `MIRASIM_HTTP1_ONLY`、`MIRASIM_LOWERCASE_RELAY_HEADERS`。
 
@@ -115,6 +119,44 @@ Kimi 的模型名以中继目录为准，现在是 `kimi-k3`。中间有个版�
 用 Claude Code 或 Codex 做一次真实请求来确认。手写的极简 Messages 请求失败，不能说明客户端不可用。插件不读取仓库路径或 Git 信息。
 
 ## 额度
+
+### 空间模式（开发预览）
+
+此模式的转发、续期和额度查询已有实现与本地测试，**初始空间授权的自动签发尚未接通，尚未完成真实空间推理的端到端验证**。不要仅凭下面的配置就替换生产插件。
+
+空间额度独立于个人套餐。空间查询使用当前 OAuth 账号访问 `/v2/machines/{nodeId}/credit`；模型请求使用空间会话授权，访问 `/v2/gateway/model/v1/...`。现有 OAuth 登录流程不会生成这种会话授权。
+
+已通过受信任的 Mirasim 集成取得空间授权时，可以配置：
+
+```yaml
+plugins:
+  enabled: true
+  configs:
+    mirasim:
+      enabled: true
+      space-node-id: pc-your-space
+      space-capability-file: /run/secrets/mirasim-space.json
+```
+
+授权文件格式如下，`token` 是空间授权，不是个人登录令牌：
+
+```json
+{"nodeId":"pc-your-space","token":"<Mirasim-issued space turn capability>"}
+```
+
+限制该文件的读取权限。CPA 在 Docker 中运行时，需要将文件只读挂载到容器，并填写容器内的路径。
+
+也可以在对应的 CPA OAuth 凭证 JSON 中保存 `space_node_id` 与 `space_capability`，并配置相同的 `space-node-id`。授权必须属于该 OAuth 账号，文件里的节点 ID 必须与配置一致。插件会通过 `/v2/gateway/turn-capability/renew` 续期，并在 CPA 的凭证刷新生命周期中保存更新后的授权。多个账号只有各自取得对应空间授权后才能使用此模式；不要给不同账号共用同一份授权文件。
+
+本机客户端正在使用空间授权，不代表它提供了可供 CPA 独立使用的签发或导出接口。本版本不从运行中的客户端提取内存或借用当前对话的授权。初始授权接口尚待平台确认；没有有效授权时推理明确报错，空间余额查询仍可使用。
+
+每次推理前，插件确认空间已开启、余额和成员份额可用，且该成员选择了空间付款。成功响应还必须带 `x-mirasim-payer: space`。授权失效会尝试续期一次；插件不会改走个人中继。付款方未确认时返回 HTTP 409，不重发已成功的模型请求。
+
+上游可能在余额或成员份额不足时回退个人付款。请求前检查不能消除并发消费导致的变化，响应头也只能事后确认付款方，因此本版本不保证上游绝不扣个人额度。遇到付款方不符，先核对账单再重试。
+
+空间额度页展示美元金额、空间剩余比例、成员上限和当前付款方。空间模式不提供个人重置卡操作。清空两项空间配置后恢复个人额度模式，原有 OAuth 登录与个人推理流程继续可用。
+
+### 个人额度与管理中心
 
 v7.2.159 及更新版本可在管理中心的标准额度页查看。管理中心 v1.24.2 的标准额度页不会画出插件额度，请打开侧边栏 **Mirasim Quota**。更早但仍受支持的 CPA 也用这个页面。页面显示套餐、免费或付费档、账号额度、按模型拆开的窗口、剩余比例和重置倒计时。某个模型用完不会显示成整个账号用完。
 

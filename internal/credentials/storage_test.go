@@ -16,6 +16,23 @@ import (
 	pluginconfig "github.com/router-for-me/CLIProxyAPIPlugins/mirasim/internal/config"
 )
 
+func TestSpaceAuthorizationSurvivesOAuthStorageAndMetadataRoundTrip(t *testing.T) {
+	storage, err := InstallOAuth(FromSettings(pluginconfig.Defaults()), "access", "refresh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	storage.SpaceNodeID = "pc-test"
+	storage.SpaceCapability = "private-space-authorization"
+	parsed, err := Parse(storage.JSON(), pluginconfig.Defaults())
+	if err != nil || parsed.SpaceNodeID != storage.SpaceNodeID || parsed.SpaceCapability != storage.SpaceCapability {
+		t.Fatal("space authorization was lost from credential storage")
+	}
+	auth := parsed.AuthData("auth", "auth.json", time.Now())
+	if auth.Metadata["space_capability"] != storage.SpaceCapability || auth.Metadata["space_node_id"] != storage.SpaceNodeID {
+		t.Fatal("space authorization was lost during host persistence")
+	}
+}
+
 func TestOldOAuthSnapshotUsesRunningClientVersion(t *testing.T) {
 	old, err := InstallOAuth(FromSettings(pluginconfig.Settings{ClientVersion: "0.0.272"}), "access", "refresh")
 	if err != nil {

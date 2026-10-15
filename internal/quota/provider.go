@@ -39,7 +39,7 @@ func (p *Provider) DescribeQuota(context.Context, pluginapi.QuotaDescribeRequest
 		// POST /v1/reset-cards/{id}/redeem. The reset route carries no
 		// parameters, so the provider spends the card that expires soonest on
 		// the caller's behalf and reports which card it used.
-		SupportsReset: true,
+		SupportsReset: p.settings.SpaceNodeID == "" && p.settings.SpaceCapabilityFile == "",
 	}, nil
 }
 
@@ -78,7 +78,11 @@ func (p *Provider) ResetQuota(ctx context.Context, req pluginapi.QuotaResetReque
 	if req.HTTPClient == nil {
 		return pluginapi.QuotaResetResponse{}, fmt.Errorf("host HTTP client is required")
 	}
-	result, errReset := p.pool.Client(*storage).ResetQuota(ctx, req.HTTPClient)
+	client := p.pool.Client(*storage)
+	if client.SpaceEnabled() {
+		return pluginapi.QuotaResetResponse{Message: "Space credit cannot be reset with a personal account reset card."}, nil
+	}
+	result, errReset := client.ResetQuota(ctx, req.HTTPClient)
 	if errReset != nil {
 		return pluginapi.QuotaResetResponse{}, errReset
 	}
@@ -142,6 +146,9 @@ func resetOutcomeResponse(result mirasim.ResetCardResult) pluginapi.QuotaResetRe
 // page renders. Model-scoped windows stay in their own group so a single
 // exhausted model does not read as an exhausted account.
 func Normalize(storage credentials.Storage, snapshot mirasim.QuotaSnapshot) pluginapi.QuotaFetchResponse {
+	if snapshot.Space != nil {
+		return normalizeSpace(*snapshot.Space)
+	}
 	response := pluginapi.QuotaFetchResponse{}
 	// /v1/limits reports whether the account is paying, which the plan claim in
 	// the token does not say on its own: a named plan can still be a trial. Pass

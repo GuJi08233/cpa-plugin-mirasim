@@ -143,6 +143,8 @@ type Client struct {
 	refreshRequired       bool
 	quota                 QuotaSnapshot
 	authProxyURL          string
+	spaceToken            string
+	spaceTokenExpiresAt   time.Time
 	now                   func() time.Time
 }
 
@@ -193,6 +195,13 @@ func (c *Client) NextRefreshAfter(now time.Time) time.Time {
 	}
 	if profileNext.Before(next) {
 		next = profileNext
+	}
+	if c.options.SpaceNodeID != "" || c.options.SpaceCapabilityFile != "" {
+		if claims, err := decodeSpaceClaims(c.storage.SpaceCapability); err == nil {
+			if spaceNext := time.Unix(claims.Expires, 0).Add(-spaceRefreshLead); spaceNext.After(now) && spaceNext.Before(next) {
+				next = spaceNext
+			}
+		}
 	}
 	if next.Before(now) {
 		return now
@@ -307,6 +316,9 @@ func (c *Client) doControl(ctx context.Context, client pluginapi.HostHTTPClient,
 // do accepts provider-owned headers separately so untrusted downstream
 // x-mirasim-* values can remain blocked while internal probes are forwarded.
 func (c *Client) do(ctx context.Context, client pluginapi.HostHTTPClient, method, requestPath string, query url.Values, headers, providerHeaders http.Header, body []byte, controlPlane bool) (pluginapi.HTTPResponse, error) {
+	if !controlPlane && c.SpaceEnabled() {
+		return c.doSpace(ctx, client, method, requestPath, query, headers, body)
+	}
 	if client == nil {
 		return pluginapi.HTTPResponse{}, fmt.Errorf("host HTTP client is required")
 	}
@@ -345,6 +357,9 @@ func (c *Client) do(ctx context.Context, client pluginapi.HostHTTPClient, method
 }
 
 func (c *Client) DoStream(ctx context.Context, client pluginapi.HostHTTPClient, method, requestPath string, query url.Values, headers http.Header, body []byte) (pluginapi.HTTPStreamResponse, error) {
+	if c.SpaceEnabled() {
+		return c.doSpaceStream(ctx, client, method, requestPath, query, headers, body)
+	}
 	if client == nil {
 		return pluginapi.HTTPStreamResponse{}, fmt.Errorf("host HTTP client is required")
 	}
@@ -420,6 +435,9 @@ func (c *Client) CachedModels() []RemoteModel {
 // FetchQuota queries structured limits only. A missing route must never
 // trigger a billable inference request.
 func (c *Client) FetchQuota(ctx context.Context, client pluginapi.HostHTTPClient) (QuotaSnapshot, error) {
+	if c.SpaceEnabled() {
+		return c.fetchSpaceQuota(ctx, client)
+	}
 	providerHeaders := http.Header{quotaProbeHeader: []string{"usage"}}
 	resp, errDo := c.doControl(ctx, client, http.MethodGet, limitsPath, nil, http.Header{
 		"Accept": []string{"application/json"},
@@ -718,6 +736,9 @@ func (c *Client) endpoint(requestPath string, query url.Values) (string, string,
 }
 
 func (c *Client) observeQuota(headers http.Header) {
+	if c.SpaceEnabled() {
+		return
+	}
 	snapshot, ok := QuotaFromHeaders(headers, time.Now())
 	if !ok {
 		return
@@ -936,6 +957,7 @@ func foreignModelNamespace(id string) bool {
 }
 
 type QuotaSnapshot struct {
+	Space      *SpaceCredit       `json:"space,omitempty"`
 	Available  bool               `json:"available"`
 	Source     string             `json:"source"`
 	ObservedAt time.Time          `json:"observed_at"`
@@ -1113,6 +1135,9 @@ func resetTimeJSON(raw json.RawMessage) *time.Time {
 
 func (q QuotaSnapshot) Clone() QuotaSnapshot {
 	clone := q
+	if q.Space != nil {
+		clone.Space = q.Space.Clone()
+	}
 	if q.Headers != nil {
 		clone.Headers = make(map[string]string, len(q.Headers))
 		for key, value := range q.Headers {

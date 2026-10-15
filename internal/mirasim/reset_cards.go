@@ -81,6 +81,9 @@ type resetCardRedeemPayload struct {
 // This only ever calls the account routes. It never issues an inference
 // request, so a reset attempt cannot be billed as usage.
 func (c *Client) ResetQuota(ctx context.Context, client pluginapi.HostHTTPClient) (ResetCardResult, error) {
+	if c.SpaceEnabled() {
+		return ResetCardResult{Outcome: ResetOutcomeUnsupported}, nil
+	}
 	cards, supported, errList := c.listResetCards(ctx, client)
 	if errList != nil {
 		return ResetCardResult{}, errList

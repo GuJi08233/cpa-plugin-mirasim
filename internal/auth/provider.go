@@ -63,9 +63,18 @@ func (p *Provider) RefreshAuth(ctx context.Context, req pluginapi.AuthRefreshReq
 	if _, errRefresh := client.RefreshForHost(refreshCtx, req.Host.ProxyURL); errRefresh != nil {
 		return pluginapi.AuthRefreshResponse{}, errRefresh
 	}
+	// OAuth may already have rotated its refresh token. A separate space
+	// renewal failure must not discard that new credential before CPA saves it.
+	errSpace := client.RefreshSpaceAuth(refreshCtx)
 	*storage = client.Storage()
 	next := client.NextRefreshAfter(time.Now())
 	auth := storage.AuthData(req.AuthID, req.AuthID, next)
+	if client.SpaceEnabled() {
+		auth.Metadata["space_authorization_status"] = "ready"
+		if errSpace != nil {
+			auth.Metadata["space_authorization_status"] = "unavailable"
+		}
+	}
 	// The refresh request does not carry the physical filename. Leave it empty
 	// so the host preserves the existing auth-dir filename.
 	auth.FileName = ""
@@ -138,7 +147,7 @@ func mergeAuthMetadata(auth *pluginapi.AuthData, existing map[string]any) {
 	}
 	for key, value := range existing {
 		switch strings.ToLower(strings.TrimSpace(key)) {
-		case "access_token", "refresh_token", "device_private_key", "credential_dir":
+		case "access_token", "refresh_token", "space_capability", "space_authorization_status", "device_private_key", "credential_dir":
 			continue
 		}
 		if _, present := auth.Metadata[key]; !present {
