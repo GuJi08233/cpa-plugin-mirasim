@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
@@ -192,10 +193,16 @@ func (p *Provider) ModelsForAuth(ctx context.Context, req pluginapi.AuthModelReq
 		return pluginapi.ModelResponse{}, errParse
 	}
 	if storage == nil {
+		if p.settings.SpaceNodeID != "" || p.settings.SpaceCapabilityFile != "" {
+			return pluginapi.ModelResponse{Provider: credentials.Provider}, fmt.Errorf("space model discovery requires a Mirasim OAuth credential")
+		}
 		return pluginapi.ModelResponse{Provider: credentials.Provider, Models: publishModels(fallbackModels())}, nil
 	}
 	client := p.pool.Client(*storage)
 	catalog, errCatalog := client.ListModels(ctx, req.HTTPClient)
+	if errCatalog != nil && client.SpaceEnabled() && len(client.CachedModels()) == 0 {
+		return pluginapi.ModelResponse{Provider: credentials.Provider}, errCatalog
+	}
 	var models []pluginapi.ModelInfo
 	// Withdrawals can still be fetched when the account catalog is unavailable.
 	roster := client.ModelRoster(ctx, req.HTTPClient)

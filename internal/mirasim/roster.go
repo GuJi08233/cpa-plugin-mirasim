@@ -240,6 +240,9 @@ func (c *Client) CachedModelRoster() ModelRoster {
 // Optional metadata is cached on this credential's client, never globally.
 // Failure leaves discovery usable, but never manufactures catalog membership.
 func (c *Client) ModelRoster(ctx context.Context, host pluginapi.HostHTTPClient) ModelRoster {
+	if c.SpaceEnabled() {
+		return c.CachedModelRoster()
+	}
 	c.rosterMu.Lock()
 	defer c.rosterMu.Unlock()
 	now := c.nowTime()

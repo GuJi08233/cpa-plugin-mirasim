@@ -8,6 +8,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"slices"
 	"strings"
@@ -76,6 +77,25 @@ func TestCatalogFailureUsesOfficialFallbackForExistingCredential(t *testing.T) {
 	}
 	if _, old := byID["claude-opus-4-6"]; old {
 		t.Fatal("0.0.354 fallback still contains removed Opus 4.6")
+	}
+}
+
+func TestSpaceCatalogFailureDoesNotPublishPersonalOrBuiltinModels(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.URL.Path != "/v2/gateway/session" || req.Method != "POST" {
+			t.Error("space discovery reached a personal catalog", req.URL.Path)
+		}
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer server.Close()
+	storage := providerTestStorage(t)
+	storage.RelayURL = server.URL
+	settings := pluginconfig.Defaults()
+	settings.SpaceNodeID = "pc-test"
+	provider := New(settings, mirasim.NewPool(mirasim.RelayOptions{SpaceNodeID: "pc-test"}))
+	response, err := provider.ModelsForAuth(context.Background(), pluginapi.AuthModelRequest{StorageJSON: storage.JSON()})
+	if err == nil || len(response.Models) != 0 {
+		t.Fatal("space discovery failure advertised personal/default models")
 	}
 }
 

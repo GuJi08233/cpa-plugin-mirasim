@@ -396,6 +396,9 @@ func (c *Client) DoStream(ctx context.Context, client pluginapi.HostHTTPClient, 
 }
 
 func (c *Client) ListModels(ctx context.Context, client pluginapi.HostHTTPClient) (Catalog, error) {
+	if c.SpaceEnabled() {
+		return c.listSpaceModels(ctx)
+	}
 	resp, errDo := c.doControl(ctx, client, http.MethodGet, modelsPath, nil, http.Header{
 		"Accept": []string{"application/json"},
 	}, nil, nil)
