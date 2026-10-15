@@ -32,6 +32,8 @@ plugins:
 
 发布覆盖 Linux、macOS、Windows 的 amd64 与 arm64，以及 FreeBSD amd64。
 
+在 GitHub Actions 手动运行 **Build** 时，可以用 `version` 指定构建版本（例如 `1.6.0-dev`）；留空则读取 `cmd/mirasim/main.go` 中的版本。安装包文件名和插件内版本使用同一个值。`v*` 标签构建沿用标签版本，并按现有流程发布 GitHub Release。
+
 从 v1.1.x 升级时删掉 `oauth-public-base-url`。留着只会多一条警告，其余配置和已保存的凭证继续有效。浏览器回调改走 CPA 自己的端口。
 
 ## 配置

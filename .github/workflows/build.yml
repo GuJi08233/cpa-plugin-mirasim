@@ -1,4 +1,5 @@
 name: Build
+run-name: Build ${{ inputs.version || github.ref_name }}
 
 on:
   pull_request:
@@ -6,6 +7,11 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Build version; leave empty to read cmd/mirasim/main.go'
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -17,9 +23,37 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Resolve build version
+        id: version
+        shell: bash
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          REQUESTED_VERSION="${REQUESTED_VERSION#v}"
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            if [[ -n "${REQUESTED_VERSION}" && "${REQUESTED_VERSION}" != "${VERSION}" ]]; then
+              echo '::error::Requested version must match the release tag'
+              exit 1
+            fi
+          elif [[ -n "${REQUESTED_VERSION}" ]]; then
+            VERSION="${REQUESTED_VERSION}"
+          else
+            VERSION="$(sed -nE 's/^var pluginVersion = "([^"]+)"$/\1/p' cmd/mirasim/main.go)"
+          fi
+          if [[ ! "${VERSION}" =~ ^[0-9]+(\.[0-9]+)+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]; then
+            echo '::error::Invalid or missing plugin build version'
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "Build version: ${VERSION}"
 
       - name: Validate store release tag
         if: github.ref_type == 'tag'
@@ -44,6 +78,8 @@ jobs:
     name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
     needs: test
     runs-on: ${{ matrix.runner }}
+    env:
+      VERSION: ${{ needs.test.outputs.version }}
     strategy:
       fail-fast: false
       matrix:
@@ -84,12 +120,6 @@ jobs:
       - name: Resolve release metadata
         run: |
           set -euo pipefail
-          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
-            VERSION="${GITHUB_REF_NAME#v}"
-          else
-            VERSION="0.0.0-dev"
-          fi
-          echo "VERSION=${VERSION}" >> "${GITHUB_ENV}"
           echo "LIB_NAME=${PLUGIN_ID}.${{ matrix.ext }}" >> "${GITHUB_ENV}"
           echo "ARCHIVE_NAME=${PLUGIN_ID}_${VERSION}_${{ matrix.goos }}_${{ matrix.goarch }}.zip" >> "${GITHUB_ENV}"
 
@@ -124,6 +154,8 @@ jobs:
     name: Build windows/arm64
     needs: test
     runs-on: ubuntu-24.04
+    env:
+      VERSION: ${{ needs.test.outputs.version }}
     defaults:
       run:
         shell: bash
@@ -141,12 +173,6 @@ jobs:
         id: release_metadata
         run: |
           set -euo pipefail
-          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
-            VERSION="${GITHUB_REF_NAME#v}"
-          else
-            VERSION="0.0.0-dev"
-          fi
-          echo "VERSION=${VERSION}" >> "${GITHUB_ENV}"
           echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
           echo "ARCHIVE_NAME=${PLUGIN_ID}_${VERSION}_windows_arm64.zip" >> "${GITHUB_ENV}"
 
@@ -186,6 +212,8 @@ jobs:
     name: Build freebsd/amd64
     needs: test
     runs-on: ubuntu-24.04
+    env:
+      VERSION: ${{ needs.test.outputs.version }}
     defaults:
       run:
         shell: bash
@@ -203,12 +231,6 @@ jobs:
         id: release_metadata
         run: |
           set -euo pipefail
-          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
-            VERSION="${GITHUB_REF_NAME#v}"
-          else
-            VERSION="0.0.0-dev"
-          fi
-          echo "VERSION=${VERSION}" >> "${GITHUB_ENV}"
           echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
           echo "ARCHIVE_NAME=${PLUGIN_ID}_${VERSION}_freebsd_amd64.zip" >> "${GITHUB_ENV}"
 
