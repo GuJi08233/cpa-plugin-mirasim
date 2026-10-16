@@ -4,7 +4,8 @@ import { createHash, generateKeyPairSync, verify } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { machineAuthorization, validateCapability, writeCapability, exportCapability } from './export_space_capability.mjs';
+import { request as httpRequest } from 'node:http';
+import { machineAuthorization, validateCapability, writeCapability, exportCapability, startSigner } from './export_space_capability.mjs';
 
 function fixture() {
   const { publicKey, privateKey } = generateKeyPairSync('ed25519');
@@ -21,6 +22,56 @@ function opaqueToken(change = {}) {
   const claims = { sub: 'ig-0123456789ab', exp: Math.floor(Date.now() / 1000) + 600, ...change };
   return `gtr.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.${'a'.repeat(32)}`;
 }
+
+function signRequest(socketPath, body, path = '/sign') {
+  return new Promise((resolve,reject) => {
+    const req=httpRequest({socketPath,path,method:'POST',headers:{'content-type':'application/json'}},res=>{
+      let raw='';res.setEncoding('utf8');res.on('data',chunk=>raw+=chunk);
+      res.on('end',()=>resolve({status:res.statusCode,body:JSON.parse(raw)}));
+    });
+    req.on('error',reject);req.end(JSON.stringify(body));
+  });
+}
+
+test('host broker signs exact gateway path, reference and body hash without exporting its private key', async () => {
+  const dir=await fs.mkdtemp(join(tmpdir(),'mirasim-sign-'));
+  let signer;
+  try {
+    const {identity,publicKey}=fixture();
+    const identityFile=join(dir,'identity.json'),capabilityFile=join(dir,'space.json'),socketPath=join(dir,'sign.sock');
+    await fs.writeFile(identityFile,JSON.stringify(identity),{mode:0o600});
+    const capability=opaqueToken();
+    await writeCapability(capabilityFile,{nodeId:'pc-test',appId:'cpa',subject:'ig-0123456789ab',token:capability});
+    const args={nodeId:'pc-test',appId:'cpa',identityFile,capabilityFile,socketPath};
+    signer=await startSigner(args);
+    assert.equal((await fs.stat(socketPath)).mode&0o777,0o600);
+    await assert.rejects(startSigner(args),/already listens/);
+    const path='/v2/gateway/model/v1/responses',bodySha256=createHash('sha256').update('{"model":"gpt-test"}').digest('hex');
+    const request={nodeId:'pc-test',appId:'cpa',method:'POST',path,bodySha256};
+    const response=await signRequest(socketPath,request);
+    assert.equal(response.status,200);
+    assert.equal(response.body.token,capability);
+    assert.equal(response.body.subject,'ig-0123456789ab');
+    assert.deepEqual(Object.keys(response.body).sort(),['nodeId','appId','subject','token','authorization'].sort());
+    const parts=response.body.authorization.split('.'),signature=Buffer.from(parts[4],'base64url');
+    const message=['mirasim-machine-call-v1','POST',path+'#'+capability,'pc-test',parts[2],parts[3],bodySha256].join('\n');
+    assert.ok(verify(null,Buffer.from(message),publicKey,signature));
+    assert.ok(!verify(null,Buffer.from(message.replace(bodySha256,'0'.repeat(64))),publicKey,signature));
+    for (const changes of [{nodeId:'other'},{appId:'other'},{method:'GET'},{path:'/v2/machines/pc-test/delete'},
+      {path:path+'?arbitrary=1'},{path:path+'#other'},{bodySha256:'invalid'}]) {
+      const denied=await signRequest(socketPath,{...request,...changes});assert.equal(denied.status,403);
+      assert.ok(!JSON.stringify(denied).includes(capability));
+    }
+    assert.equal((await signRequest(socketPath,request,'/unknown')).status,404);
+    const fresh=opaqueToken({exp:Math.floor(Date.now()/1000)+1200});
+    await writeCapability(capabilityFile,{nodeId:'pc-test',appId:'cpa',subject:'ig-0123456789ab',token:fresh});
+    assert.equal((await signRequest(socketPath,request)).body.token,fresh);
+    const renewal=await signRequest(socketPath,{...request,path:'/v2/gateway/turn-capability/renew',bodySha256:createHash('sha256').update('').digest('hex')});
+    assert.equal(renewal.status,200);
+    await writeCapability(capabilityFile,{nodeId:'other-space',appId:'cpa',subject:'ig-0123456789ab',token:fresh});
+    assert.equal((await signRequest(socketPath,request)).status,503);
+  } finally {await signer?.close();await fs.rm(dir,{recursive:true,force:true});}
+});
 
 test('machine signature binds node, endpoint, timestamp, nonce and exact body', () => {
   const { publicKey, identity } = fixture();

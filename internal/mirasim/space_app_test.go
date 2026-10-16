@@ -113,9 +113,17 @@ func TestOpaqueRenewalKeepsEstablishedApplicationSubject(t *testing.T) {
 			c.options.SpaceCapabilityFile = filepath.Join(t.TempDir(), "space.json")
 			old := applicationOpaqueToken(t, "ig-0123456789ab", time.Now().Add(time.Minute))
 			writeApplicationFile(t, c, old, "ig-0123456789ab")
+			c.options.SpaceSignerSocket = startTestSpaceSigner(t, func(w http.ResponseWriter, req *http.Request) {
+				var request map[string]string
+				_ = json.NewDecoder(req.Body).Decode(&request)
+				if request["path"] != spaceRenewPath {
+					t.Error("wrong signer path for renewal")
+				}
+				writeTestSpaceProof(t, w, old, nil)
+			})
 			newToken := applicationOpaqueToken(t, subject, time.Now().Add(time.Hour))
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-				if req.URL.Path != spaceRenewPath || req.Header.Get("Authorization") != "Bearer "+old {
+				if req.URL.Path != spaceRenewPath || !strings.HasPrefix(req.Header.Get("Authorization"), "MirasimMachine v1.pc-test.") || req.Header.Get(spaceTurnReferenceHeader) != old {
 					t.Error("wrong renewal request")
 				}
 				_ = json.NewEncoder(w).Encode(map[string]string{"token": newToken})

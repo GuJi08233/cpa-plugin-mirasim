@@ -32,6 +32,8 @@ type Settings struct {
 	SpaceCapabilityFile string `yaml:"space-capability-file"`
 	// SpaceAppID opts into a registered application's space-only capability.
 	SpaceAppID string `yaml:"space-app-id"`
+	// SpaceSignerSocket is a private Unix socket on the registered space host.
+	SpaceSignerSocket string `yaml:"space-signer-socket"`
 	// OAuthLoginProvider names the Mirasim sign-in provider used for browser login
 	// when the caller does not request one.
 	OAuthLoginProvider string `yaml:"oauth-login-provider"`
@@ -149,6 +151,9 @@ func Parse(raw []byte) Settings {
 		if _, present := section["space-app-id"]; present {
 			settings.SpaceAppID = strings.TrimSpace(configured.SpaceAppID)
 		}
+		if _, present := section["space-signer-socket"]; present {
+			settings.SpaceSignerSocket = strings.TrimSpace(configured.SpaceSignerSocket)
+		}
 	}
 	return settings
 }
@@ -198,6 +203,7 @@ func Defaults() Settings {
 		SpaceNodeID:           strings.TrimSpace(os.Getenv("MIRASIM_SPACE_NODE_ID")),
 		SpaceCapabilityFile:   strings.TrimSpace(os.Getenv("MIRASIM_SPACE_CAPABILITY_FILE")),
 		SpaceAppID:            strings.TrimSpace(os.Getenv("MIRASIM_SPACE_APP_ID")),
+		SpaceSignerSocket:     strings.TrimSpace(os.Getenv("MIRASIM_SPACE_SIGNER_SOCKET")),
 		OAuthLoginProvider:    firstNonEmpty(cleanProvider(os.Getenv("MIRASIM_OAUTH_LOGIN_PROVIDER")), DefaultOAuthLoginProvider),
 		OAuthCallbackPort:     cleanPort(os.Getenv("MIRASIM_OAUTH_CALLBACK_PORT")),
 		HTTP1Only:             boolOrDefault(os.Getenv("MIRASIM_HTTP1_ONLY"), true),

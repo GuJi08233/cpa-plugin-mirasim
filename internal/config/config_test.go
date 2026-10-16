@@ -8,12 +8,13 @@ func TestSpaceConfigurationOverridesEnvironmentAndCanBeDisabled(t *testing.T) {
 	t.Setenv("MIRASIM_SPACE_NODE_ID", "pc-env")
 	t.Setenv("MIRASIM_SPACE_CAPABILITY_FILE", "/private/env.json")
 	t.Setenv("MIRASIM_SPACE_APP_ID", "env-app")
-	settings := Parse([]byte("space-node-id: pc-config\nspace-capability-file: /private/config.json\nspace-app-id: cpa\n"))
-	if settings.SpaceNodeID != "pc-config" || settings.SpaceCapabilityFile != "/private/config.json" || settings.SpaceAppID != "cpa" {
+	t.Setenv("MIRASIM_SPACE_SIGNER_SOCKET", "/private/env.sock")
+	settings := Parse([]byte("space-node-id: pc-config\nspace-capability-file: /private/config.json\nspace-app-id: cpa\nspace-signer-socket: /private/cpa.sock\n"))
+	if settings.SpaceNodeID != "pc-config" || settings.SpaceCapabilityFile != "/private/config.json" || settings.SpaceAppID != "cpa" || settings.SpaceSignerSocket != "/private/cpa.sock" {
 		t.Fatalf("space configuration did not override environment")
 	}
-	settings = Parse([]byte("space-node-id: ''\nspace-capability-file: ''\nspace-app-id: ''\n"))
-	if settings.SpaceNodeID != "" || settings.SpaceCapabilityFile != "" || settings.SpaceAppID != "" {
+	settings = Parse([]byte("space-node-id: ''\nspace-capability-file: ''\nspace-app-id: ''\nspace-signer-socket: ''\n"))
+	if settings.SpaceNodeID != "" || settings.SpaceCapabilityFile != "" || settings.SpaceAppID != "" || settings.SpaceSignerSocket != "" {
 		t.Fatal("space settings could not be cleared")
 	}
 }

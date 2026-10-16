@@ -54,6 +54,7 @@ plugins:
 | `space-node-id` | 空（个人额度） | 实验性空间模式。填写目标空间的节点 ID 后，推理走空间网关，额度页显示空间余额。需要另行提供空间会话授权，详见下文。 |
 | `space-capability-file` | 空 | 用于初始化空间授权的私有 JSON 文件路径。文件须含 `nodeId` 和 Mirasim 签发的 `token`；普通 OAuth token 不能用于空间网关。 |
 | `space-app-id` | 空 | 已登记的空间接口应用 ID。启用后推理使用该应用的空间专用授权，按应用归属计费；授权文件还须含相同的 `appId`。 |
+| `space-signer-socket` | 空 | 宿主签名服务的私有 Unix socket 路径。新版 `gtr` 授权的推理和续期还需要主机签名，Docker 中填写容器内路径。 |
 
 环境变量依次为 `MIRASIM_OAUTH_LOGIN_PROVIDER`、`MIRASIM_OAUTH_CALLBACK_PORT`、`MIRASIM_COLLECT`、`MIRASIM_LOCALE`、`MIRASIM_RELAY_URL`、`MIRASIM_ADMIN_URL`、`MIRASIM_CLIENT_VERSION`。
 
@@ -172,7 +173,8 @@ plugins:
 node scripts/export_space_capability.mjs \
   --node-id pc-your-space --app-id cpa-model-gateway \
   --identity-file ~/.mirasim/mirachannel-v2/instance.json \
-  --output /private/cpa-secrets/space.json --watch
+  --output /private/cpa-secrets/space.json --watch \
+  --signer-socket /private/cpa-secrets/signer.sock
 ```
 
 工具使用官方主机签名格式调用 `POST /v2/machines/{nodeId}/apps/turn-capability`，默认每 240 秒重新签发，原子更新权限为 600 的文件；失败保留上一次文件并重试。可用 systemd 等服务管理器托管此进程。**主机私钥留在宿主机，只把输出的应用授权文件提供给 CPA。** 不读取会话缓存或进程内存，不借用当前对话的令牌。
@@ -183,17 +185,22 @@ CPA 的配置如下（文件路径用容器内路径；原子轮换时应挂载�
 space-node-id: pc-your-space
 space-app-id: cpa-model-gateway
 space-capability-file: /run/secrets/mirasim/space.json
+space-signer-socket: /run/secrets/mirasim/signer.sock
 ```
 
 应用授权文件含 `nodeId`、`appId`、`token`。对于 JWT，插件校验令牌公开的应用身份、空间、付款归属和 `pay_only: true`，拒绝个人付款或其他应用的令牌；对于 `gtr`，按下一段的规则验证文件绑定。初始加载、即将到期或授权失败重试时会读取轮换后的文件。现有网关续期仍然可用，宿主工具重新签发可覆盖 CPA 长时间停机后旧令牌已过期的情况。OAuth 账号仍用于读取空间模型目录和额度，需要该空间的访问权限。应用推理的归属是应用，不是这个 OAuth 成员。
 
 从 `1.6.0-dev.3` 起，签发工具和插件同时兼容 JWT 与平台的 `gtr` 引用令牌。后者只公开 `sub`、`exp`，应用、空间和计费范围由平台在服务端保存，不能继续要求令牌里存在 JWT 的范围字段。签发工具只接受从选定空间、选定应用的主机签名接口直接取得的 `gtr`，并在私有授权文件里记录 `subject`；插件要求文件中的空间、应用与配置一致，令牌与文件的主体一致，续期时主体不变。平台负责验证引用及其授权范围，插件继续要求推理成功响应带 `x-mirasim-payer: space`。旧版本遇到这类令牌会停止更新文件，旧授权过期后出现 401，需要同时升级插件和宿主签发工具。
 
+从 `1.6.0-dev.4` 起，`gtr` 推理和续期按新版官方客户端协议增加主机签名：`Authorization: MirasimMachine ...` 和 `x-mirasim-turn-reference`，签名绑定方法、路径与令牌、节点、时间戳、nonce 及请求体 SHA-256。仅使用 `Bearer gtr...` 会被新版网关拒绝，即使刚签发、尚未到期也可能返回 401。
+
+宿主签发工具的 `--signer-socket` 同时启动受限签名服务，插件通过 `space-signer-socket` 调用。socket 权限为 600，须把它所在的目录共享给 CPA 容器，不能只挂载某一个 socket 文件（服务重启会重建它）。目录内只放这个应用的授权和 socket，宿主机主私钥不挂载进容器。签名服务只接收配置中的空间、应用、允许的网关路径及请求体摘要，不接收提示词正文；使用自己当前导出的令牌签名，拒绝客户端指定其他身份或管理接口。它不增加公网监听端口。systemd 托管时，在原 `ExecStart` 命令追加 `--signer-socket /private/cpa-secrets/signer.sock`，同步更新插件配置后重启签名服务和 CPA。缺少签名配置时插件返回 `space_signer_missing`，不继续发送会被拒绝的 Bearer 请求。
+
 每次推理前，插件确认空间已开启、余额和成员份额可用，且该成员选择了空间付款。成功响应还必须带 `x-mirasim-payer: space`。授权失效会尝试续期一次；插件不会改走个人中继。付款方未确认时返回 HTTP 409，不重发已成功的模型请求。
 
 普通成员授权的上游可能在余额或成员份额不足时回退个人付款；请求前检查不能消除并发消费导致的变化，响应头只能事后确认。应用模式使用平台按选定应用签发的授权：JWT 必须公开声明 `pay_only: true`；`gtr` 的范围由平台服务端保存和执行，本地不能检查这项隐藏字段。两种模式都检查实际付款响应头；遇到不符，先核对账单再重试。
 
-空间额度页展示美元金额、空间剩余比例、成员上限和当前付款方。空间模式不提供个人重置卡操作。清空 `space-node-id`、`space-capability-file`、`space-app-id` 后恢复个人额度模式，原有 OAuth 登录与个人推理流程继续可用。
+空间额度页展示美元金额、空间剩余比例、成员上限和当前付款方。空间模式不提供个人重置卡操作。清空 `space-node-id`、`space-capability-file`、`space-app-id`、`space-signer-socket` 后恢复个人额度模式，原有 OAuth 登录与个人推理流程继续可用。
 
 ### 个人额度与管理中心
 

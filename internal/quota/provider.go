@@ -39,7 +39,7 @@ func (p *Provider) DescribeQuota(context.Context, pluginapi.QuotaDescribeRequest
 		// POST /v1/reset-cards/{id}/redeem. The reset route carries no
 		// parameters, so the provider spends the card that expires soonest on
 		// the caller's behalf and reports which card it used.
-		SupportsReset: p.settings.SpaceNodeID == "" && p.settings.SpaceCapabilityFile == "" && p.settings.SpaceAppID == "",
+		SupportsReset: p.settings.SpaceNodeID == "" && p.settings.SpaceCapabilityFile == "" && p.settings.SpaceAppID == "" && p.settings.SpaceSignerSocket == "",
 	}, nil
 }
 

@@ -65,7 +65,7 @@ func (s SpaceCredit) Clone() *SpaceCredit {
 func (c *Client) SpaceEnabled() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.options.SpaceNodeID != "" || c.options.SpaceCapabilityFile != "" || c.options.SpaceAppID != ""
+	return c.options.SpaceNodeID != "" || c.options.SpaceCapabilityFile != "" || c.options.SpaceAppID != "" || c.options.SpaceSignerSocket != ""
 }
 
 func (c *Client) spaceNodeLocked() (string, error) {
@@ -319,7 +319,10 @@ func (c *Client) spaceCapabilityLocked(ctx context.Context, force bool) (string,
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.spaceToken)
+	req.Header, err = c.spaceGatewayAuthorizationLocked(ctx, c.spaceToken, http.MethodPost, spaceRenewPath, nil)
+	if err != nil {
+		return "", err
+	}
 	private, closeClient, err := newPrivateHTTPClient(c.authProxyURL, refreshTimeoutForSpace)
 	if err != nil {
 		return "", err
@@ -367,10 +370,15 @@ func (c *Client) spaceRequest(ctx context.Context, method, path string, query ur
 	}
 	c.mu.Lock()
 	token, err := c.spaceCapabilityLocked(ctx, force)
+	var auth http.Header
+	if err == nil {
+		auth, err = c.spaceGatewayAuthorizationLocked(ctx, token, method, spaceGatewayPath+path, body)
+	}
 	var meta map[string]string
 	if err == nil {
 		meta, err = c.relayMetadataLocked(ctx, path, body)
 	}
+	clientVersion := c.storage.ClientVersion
 	c.mu.Unlock()
 	if err != nil {
 		return pluginapi.HTTPRequest{}, err
@@ -379,13 +387,12 @@ func (c *Client) spaceRequest(ctx context.Context, method, path string, query ur
 	if err != nil {
 		return pluginapi.HTTPRequest{}, err
 	}
-	auth := http.Header{"Authorization": {"Bearer " + token}}
 	for key, value := range meta {
 		if key != "x-mirasim-account" {
 			auth.Set(key, value)
 		}
 	}
-	auth.Set(headerMirasimClient, c.storage.ClientVersion)
+	auth.Set(headerMirasimClient, clientVersion)
 	return pluginapi.HTTPRequest{Method: method, URL: endpoint, Headers: prepareHeaders(headers, auth, stream), Body: bytes.Clone(body), WireProfile: c.options.wireProfile()}, nil
 }
 

@@ -193,7 +193,7 @@ func (p *Provider) ModelsForAuth(ctx context.Context, req pluginapi.AuthModelReq
 		return pluginapi.ModelResponse{}, errParse
 	}
 	if storage == nil {
-		if p.settings.SpaceNodeID != "" || p.settings.SpaceCapabilityFile != "" || p.settings.SpaceAppID != "" {
+		if p.settings.SpaceNodeID != "" || p.settings.SpaceCapabilityFile != "" || p.settings.SpaceAppID != "" || p.settings.SpaceSignerSocket != "" {
 			return pluginapi.ModelResponse{Provider: credentials.Provider}, fmt.Errorf("space model discovery requires a Mirasim OAuth credential")
 		}
 		return pluginapi.ModelResponse{Provider: credentials.Provider, Models: publishModels(fallbackModels())}, nil
